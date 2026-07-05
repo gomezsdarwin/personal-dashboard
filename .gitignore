@@ -1,0 +1,36 @@
+node_modules/
+dist/
+dist-ssr/
+.env
+.env.local
+.env.*.local
+
+# Expo
+.expo/
+expo-env.d.ts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+ios/
+android/
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+*.log
+metro-*.log
+
+# PWA generated
+dev-dist/

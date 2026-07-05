@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  .scroller::-webkit-scrollbar { display: none; }
+  @keyframes floatIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</helmet>
+
+<div style="width:414px;height:868px;border-radius:56px;padding:11px;background:linear-gradient(150deg,#3a3a42,#17171c 55%,#2a2a30);box-shadow:0 40px 90px -30px rgba(60,50,90,0.55),0 0 0 2px rgba(255,255,255,0.06) inset;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;flex:0 0 auto;">
+  <div style="position:relative;width:392px;height:846px;border-radius:46px;overflow:hidden;background:#efe7fb;">
+
+    <!-- wallpaper -->
+    <div style="position:absolute;inset:0;{{ wallpaperStyle }}"></div>
+    <img src="https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80" alt="" style="position:absolute;inset:-40px;width:calc(100% + 80px);height:calc(100% + 80px);object-fit:cover;filter:blur(26px) saturate(1.25);opacity:0.55;" />
+    <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0) 30%,rgba(255,255,255,0.05) 70%,rgba(255,255,255,0.22));"></div>
+
+    <!-- dynamic island -->
+    <div style="position:absolute;top:13px;left:50%;transform:translateX(-50%);width:118px;height:34px;background:#08080c;border-radius:20px;z-index:40;"></div>
+
+    <!-- status bar -->
+    <div style="position:absolute;top:0;left:0;right:0;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 30px;z-index:30;color:#2a2833;font-weight:600;font-size:15px;">
+      <span style="letter-spacing:0.3px;">9:41</span>
+      <span style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <span>▮▮▮▯</span>
+        <span style="font-weight:700;">5G</span>
+        <span style="display:inline-block;width:24px;height:12px;border:1.5px solid #2a2833;border-radius:3px;position:relative;"><span style="position:absolute;inset:1.5px;right:6px;background:#2a2833;border-radius:1px;"></span></span>
+      </span>
+    </div>
+
+    <!-- scrollable content -->
+    <div class="scroller" style="position:absolute;top:52px;left:0;right:0;bottom:0;overflow-y:auto;padding:6px 18px 118px;scrollbar-width:none;">
+
+      <!-- ============ HOME ============ -->
+      <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+      <div style="animation:floatIn 0.4s ease both;">
+
+        <div style="padding:22px 4px 20px;">
+          <div style="font-size:17px;font-weight:500;color:#4a4558;">{{ greeting }}</div>
+          <div style="font-size:44px;font-weight:700;letter-spacing:-1px;line-height:1.05;color:#201c2c;margin-top:2px;">{{ userName }}</div>
+          <div style="font-size:15px;color:#5a5470;margin-top:8px;">{{ dateStr }} · {{ dueSummary }}</div>
+        </div>
+
+        <!-- to-do card -->
+        <div style="margin-top:14px;background:rgba(255,255,255,0.16);backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.4);border-radius:28px;padding:18px 16px 12px;box-shadow:0 12px 34px rgba(90,70,130,0.14),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px 12px;">
+            <div style="font-size:19px;font-weight:700;color:#2a2536;">To-Do</div>
+            <div style="font-size:13px;color:#8a84a0;font-weight:500;">{{ openCount }} open</div>
+          </div>
+
+  <!-- add form -->
+          <div style="display:flex;gap:8px;padding:0 2px 12px;">
+            <input type="text" value="{{ newTitle }}" onChange="{{ onTitle }}" onKeyDown="{{ onKey }}" placeholder="Add a task…" style="flex:1;min-width:0;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.45);border-radius:14px;padding:10px 12px;font-size:15px;color:#201c2c;outline:none;font-family:inherit;" />
+            <input type="date" value="{{ newDue }}" onChange="{{ onDue }}" style="width:44px;flex:0 0 auto;background:rgba(255,255,255,0.22);border:1px solid rgba(255,255,255,0.45);border-radius:14px;padding:10px 6px;font-size:13px;color:#5a5470;outline:none;font-family:inherit;" />
+            <button onClick="{{ addTask }}" style="flex:0 0 auto;width:42px;border:none;border-radius:14px;{{ accentDiag }}color:#fff;font-size:22px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(140,120,220,0.35);">+</button>
+          </div>
+
+          <sc-for list="{{ tasks }}" as="task" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 6px;border-top:1px solid rgba(120,110,150,0.14);">
+            <div onClick="{{ task.toggle }}" style="flex:0 0 auto;width:24px;height:24px;border-radius:50%;cursor:pointer;{{ task.checkStyle }}">
+              <sc-if value="{{ task.done }}" hint-placeholder-val="{{ false }}"><span style="color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;height:100%;">✓</span></sc-if>
+            </div>
+            <div style="flex:1;min-width:0;font-size:16px;font-weight:500;{{ task.titleStyle }}">{{ task.title }}</div>
+            <span style="flex:0 0 auto;font-size:12px;font-weight:700;padding:5px 10px;border-radius:11px;{{ task.pillStyle }}">{{ task.label }}</span>
+            <div onClick="{{ task.remove }}" style="flex:0 0 auto;width:22px;height:22px;color:#b0a8c2;font-size:16px;cursor:pointer;text-align:center;line-height:22px;">×</div>
+          </div>
+          </sc-for>
+        </div>
+
+      </div>
+      </sc-if>
+
+      <!-- ============ WORKOUT ============ -->
+      <sc-if value="{{ isWorkout }}" hint-placeholder-val="{{ false }}">
+      <div style="animation:floatIn 0.4s ease both;">
+        <div style="padding:20px 4px 14px;">
+          <div style="font-size:34px;font-weight:700;letter-spacing:-0.8px;color:#2a2536;">🏋️ Gym</div>
+          <div style="font-size:15px;color:#6a6480;margin-top:4px;">Today · Push Day · {{ dateStr }}</div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.16);backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.4);border-radius:28px;padding:16px;box-shadow:0 12px 34px rgba(90,70,130,0.14),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <div style="font-size:17px;font-weight:700;color:#2a2536;padding:0 4px 8px;">Today's session</div>
+          <sc-for list="{{ workout }}" as="ex" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 6px;border-top:1px solid rgba(120,110,150,0.14);">
+            <div style="flex:1;">
+              <div style="font-size:16px;font-weight:600;color:#2a2536;">{{ ex.name }}</div>
+              <div style="font-size:13px;color:#7a7490;margin-top:2px;">{{ ex.scheme }}</div>
+            </div>
+            <sc-if value="{{ ex.pr }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:700;color:#fff;background:linear-gradient(145deg,#ffb020,#ff7a45);padding:4px 9px;border-radius:10px;">PR</span></sc-if>
+            <div style="font-size:15px;font-weight:700;color:#2a2536;min-width:54px;text-align:right;">{{ ex.weight }}</div>
+          </div>
+          </sc-for>
+        </div>
+
+        <div style="margin-top:14px;background:rgba(255,255,255,0.16);backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.4);border-radius:28px;padding:18px 16px;box-shadow:0 12px 34px rgba(90,70,130,0.14),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;padding:0 4px 14px;">
+            <div style="font-size:17px;font-weight:700;color:#2a2536;">Weekly volume</div>
+            <div style="font-size:13px;color:#7a7490;">lbs lifted</div>
+          </div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;height:130px;padding:0 4px;">
+            <sc-for list="{{ volume }}" as="bar" hint-placeholder-count="7">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;">
+              <div style="width:100%;border-radius:8px 8px 4px 4px;{{ accentVert }}{{ bar.style }}"></div>
+              <div style="font-size:11px;color:#8a84a0;font-weight:600;">{{ bar.day }}</div>
+            </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;display:flex;gap:10px;">
+          <sc-for list="{{ prs }}" as="pr" hint-placeholder-count="3">
+          <div style="flex:1;background:rgba(255,255,255,0.14);backdrop-filter:blur(26px) saturate(1.8);-webkit-backdrop-filter:blur(26px) saturate(1.8);border:1px solid rgba(255,255,255,0.35);border-radius:20px;padding:14px 10px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.7);">
+            <div style="font-size:22px;font-weight:700;color:#2a2536;">{{ pr.value }}</div>
+            <div style="font-size:12px;color:#7a7490;margin-top:2px;">{{ pr.lift }}</div>
+          </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ SUBSCRIPTIONS ============ -->
+      <sc-if value="{{ isSubs }}" hint-placeholder-val="{{ false }}">
+      <div style="animation:floatIn 0.4s ease both;">
+        <div style="padding:20px 4px 14px;">
+          <div style="font-size:34px;font-weight:700;letter-spacing:-0.8px;color:#2a2536;">💰 Finance</div>
+          <div style="font-size:15px;color:#6a6480;margin-top:4px;">Subscriptions</div>
+        </div>
+
+        <div style="background:linear-gradient(140deg,rgba(255,255,255,0.26),rgba(255,255,255,0.08));backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.45);border-radius:28px;padding:22px 20px;box-shadow:0 12px 34px rgba(90,70,130,0.16),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <div style="font-size:14px;color:#7a7490;font-weight:500;">Total monthly</div>
+          <div style="font-size:46px;font-weight:700;letter-spacing:-1.5px;color:#2a2536;margin-top:2px;">{{ monthlyTotal }}</div>
+          <div style="font-size:14px;color:#8a84a0;margin-top:2px;">{{ subCount }} active subscriptions</div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px;overflow-x:auto;scrollbar-width:none;" class="scroller">
+          <sc-for list="{{ categories }}" as="cat" hint-placeholder-count="3">
+          <div style="flex:0 0 auto;background:rgba(255,255,255,0.14);backdrop-filter:blur(26px) saturate(1.8);-webkit-backdrop-filter:blur(26px) saturate(1.8);border:1px solid rgba(255,255,255,0.35);border-radius:16px;padding:10px 14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.7);">
+            <div style="font-size:12px;color:#7a7490;">{{ cat.name }}</div>
+            <div style="font-size:17px;font-weight:700;color:#2a2536;margin-top:1px;">{{ cat.total }}</div>
+          </div>
+          </sc-for>
+        </div>
+
+        <div style="margin-top:14px;background:rgba(255,255,255,0.16);backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.4);border-radius:28px;padding:8px 16px;box-shadow:0 12px 34px rgba(90,70,130,0.14),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <sc-for list="{{ subs }}" as="sub" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;gap:13px;padding:13px 4px;border-top:1px solid rgba(120,110,150,0.14);">
+            <div style="flex:0 0 auto;width:42px;height:42px;border-radius:13px;background:rgba(255,255,255,0.28);display:flex;align-items:center;justify-content:center;font-size:22px;">{{ sub.icon }}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:16px;font-weight:600;color:#2a2536;">{{ sub.name }}</div>
+              <div style="font-size:13px;color:#8a84a0;margin-top:1px;">{{ sub.category }}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:16px;font-weight:700;color:#2a2536;">{{ sub.cost }}</div>
+              <span style="display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:9px;margin-top:3px;{{ sub.pillStyle }}">{{ sub.renew }}</span>
+            </div>
+          </div>
+          </sc-for>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ============ PEPTIDES ============ -->
+      <sc-if value="{{ isPeptides }}" hint-placeholder-val="{{ false }}">
+      <div style="animation:floatIn 0.4s ease both;">
+        <div style="padding:20px 4px 14px;">
+          <div style="font-size:34px;font-weight:700;letter-spacing:-0.8px;color:#2a2536;">💊 Peptides</div>
+          <div style="font-size:15px;color:#6a6480;margin-top:4px;">Schedule & inventory</div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.16);backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.4);border-radius:28px;padding:16px;box-shadow:0 12px 34px rgba(90,70,130,0.14),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <div style="font-size:17px;font-weight:700;color:#2a2536;padding:0 4px 8px;">Today's schedule</div>
+          <sc-for list="{{ doses }}" as="dose" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 6px;border-top:1px solid rgba(120,110,150,0.14);">
+            <div onClick="{{ dose.toggle }}" style="flex:0 0 auto;width:24px;height:24px;border-radius:50%;cursor:pointer;{{ dose.checkStyle }}">
+              <sc-if value="{{ dose.taken }}" hint-placeholder-val="{{ false }}"><span style="color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;height:100%;">✓</span></sc-if>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:16px;font-weight:600;{{ dose.titleStyle }}">{{ dose.name }}</div>
+              <div style="font-size:13px;color:#7a7490;margin-top:1px;">{{ dose.amount }}</div>
+            </div>
+            <div style="font-size:14px;font-weight:600;color:#8a84a0;">{{ dose.time }}</div>
+          </div>
+          </sc-for>
+        </div>
+
+        <div style="margin-top:14px;font-size:15px;font-weight:700;color:#2a2536;padding:0 6px 2px;">Inventory</div>
+        <sc-for list="{{ inventory }}" as="item" hint-placeholder-count="2">
+        <div style="margin-top:10px;background:rgba(255,255,255,0.16);backdrop-filter:blur(34px) saturate(1.9);-webkit-backdrop-filter:blur(34px) saturate(1.9);border:1px solid rgba(255,255,255,0.4);border-radius:24px;padding:16px;box-shadow:0 10px 28px rgba(90,70,130,0.12),inset 0 1px 0 rgba(255,255,255,0.8);">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:17px;font-weight:700;color:#2a2536;">{{ item.name }}</div>
+            <div style="font-size:13px;font-weight:600;color:#7a7490;">{{ item.vials }} vials on hand</div>
+          </div>
+          <div style="font-size:13px;color:#8a84a0;margin-top:6px;">{{ item.recon }}</div>
+          <div style="margin-top:12px;height:8px;border-radius:4px;background:rgba(120,110,150,0.16);overflow:hidden;">
+            <div style="height:100%;border-radius:4px;{{ accentHoriz }}{{ item.barStyle }}"></div>
+          </div>
+          <div style="font-size:12px;color:#7a7490;margin-top:6px;">{{ item.dosesLeft }} doses remaining</div>
+        </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
+    </div>
+
+    <!-- ============ TAB BAR ============ -->
+    <div style="position:absolute;left:16px;right:16px;bottom:16px;height:72px;z-index:35;background:rgba(255,255,255,0.18);backdrop-filter:blur(36px) saturate(2);-webkit-backdrop-filter:blur(36px) saturate(2);border:1px solid rgba(255,255,255,0.4);border-radius:30px;box-shadow:0 14px 40px rgba(90,70,130,0.22),inset 0 1px 0 rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:space-around;padding:0 6px;">
+      <div onClick="{{ goHome }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;cursor:pointer;">
+        <sc-if value="{{ atHome }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;top:2px;left:50%;transform:translateX(-50%);width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,0.28);box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);"></div></sc-if>
+        <span style="position:relative;font-size:25px;line-height:1;">🏠</span>
+        <span style="position:relative;font-size:10px;font-weight:600;color:#4a4558;">Home</span>
+      </div>
+      <div onClick="{{ goGym }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;cursor:pointer;">
+        <sc-if value="{{ atWorkout }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:2px;left:50%;transform:translateX(-50%);width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,0.28);box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);"></div></sc-if>
+        <span style="position:relative;font-size:25px;line-height:1;">🏋️</span>
+        <span style="position:relative;font-size:10px;font-weight:600;color:#4a4558;">Gym</span>
+      </div>
+      <div onClick="{{ goFinance }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;cursor:pointer;">
+        <sc-if value="{{ atSubs }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:2px;left:50%;transform:translateX(-50%);width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,0.28);box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);"></div></sc-if>
+        <span style="position:relative;font-size:25px;line-height:1;">💰</span>
+        <span style="position:relative;font-size:10px;font-weight:600;color:#4a4558;">Finance</span>
+      </div>
+      <div onClick="{{ goPeptides }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;cursor:pointer;">
+        <sc-if value="{{ atPeptides }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;top:2px;left:50%;transform:translateX(-50%);width:56px;height:56px;border-radius:18px;background:rgba(255,255,255,0.28);box-shadow:inset 0 1px 0 rgba(255,255,255,0.8);"></div></sc-if>
+        <span style="position:relative;font-size:25px;line-height:1;">💊</span>
+        <span style="position:relative;font-size:10px;font-weight:600;color:#4a4558;">Peptides</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:414,&quot;height&quot;:868},&quot;userName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Alex&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:[&quot;#c8b4ff&quot;,&quot;#9db8ff&quot;],&quot;options&quot;:[[&quot;#c8b4ff&quot;,&quot;#9db8ff&quot;],[&quot;#ffb6c1&quot;,&quot;#ffd39b&quot;],[&quot;#9be8c9&quot;,&quot;#8ec8f2&quot;],[&quot;#f7b8d0&quot;,&quot;#c9a6f2&quot;]],&quot;tsType&quot;:&quot;string[]&quot;},&quot;wallpaper&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Sunset&quot;,&quot;Mint&quot;,&quot;Lavender&quot;],&quot;default&quot;:&quot;Sunset&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const d = (n) => { const x = new Date(); x.setHours(0,0,0,0); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+    this.state = {
+      screen: 'home',
+      newTitle: '',
+      newDue: '',
+      tasks: [
+        { id: 't1', title: 'Submit quarterly report', due: d(0), done: false },
+        { id: 't2', title: 'Renew car insurance', due: d(1), done: false },
+        { id: 't3', title: 'Call dentist to reschedule', due: d(-1), done: false },
+        { id: 't4', title: 'Meal prep for the week', due: d(3), done: false },
+        { id: 't5', title: 'Book flights for October', due: d(12), done: false },
+        { id: 't6', title: 'Read 20 pages', due: null, done: true },
+      ],
+      doses: [
+        { id: 'p1', name: 'BPC-157', amount: '250 mcg · SubQ', time: '8:00 AM', taken: true },
+        { id: 'p2', name: 'Ipamorelin', amount: '200 mcg · SubQ', time: '10:00 PM', taken: false },
+        { id: 'p3', name: 'TB-500', amount: '2 mg · weekly', time: 'Sun', taken: false },
+      ],
+    };
+  }
+
+  fmt(iso) { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+  dueMeta(iso) {
+    if (!iso) return { label: 'Someday', bg: 'rgba(120,115,150,0.15)', fg: '#6a6480', days: 9999 };
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dd = new Date(iso + 'T00:00:00');
+    const days = Math.round((dd - today) / 86400000);
+    let label, bg, fg = '#fff';
+    if (days < 0) { label = 'Overdue'; bg = 'rgba(230,40,60,0.95)'; }
+    else if (days === 0) { label = 'Today'; bg = 'rgba(255,59,48,0.95)'; }
+    else if (days === 1) { label = 'Tomorrow'; bg = 'rgba(255,95,55,0.92)'; }
+    else if (days <= 3) { label = 'in ' + days + 'd'; bg = 'rgba(255,149,0,0.92)'; }
+    else if (days <= 7) { label = 'in ' + days + 'd'; bg = 'rgba(255,196,20,0.95)'; fg = '#5a4200'; }
+    else { label = this.fmt(iso); bg = 'rgba(52,199,89,0.85)'; }
+    return { label, bg, fg, days };
+  }
+
+  go(s) { return () => this.setState({ screen: s }); }
+
+  addTask() {
+    const t = this.state.newTitle.trim();
+    if (!t) return;
+    this.setState(s => ({
+      tasks: [{ id: 'n' + Date.now(), title: t, due: s.newDue || null, done: false }, ...s.tasks],
+      newTitle: '', newDue: '',
+    }));
+  }
+
+  renderVals() {
+    const screen = this.state.screen;
+    const accentArr = this.props.accent && this.props.accent.length === 2 ? this.props.accent : ['#c8b4ff', '#9db8ff'];
+    const accentDiag = `background:linear-gradient(145deg,${accentArr[0]},${accentArr[1]});`;
+    const accentVert = `background:linear-gradient(180deg,${accentArr[0]},${accentArr[1]});`;
+    const accentHoriz = `background:linear-gradient(90deg,${accentArr[0]},${accentArr[1]});`;
+    const checkOn = accentDiag + 'border:none;';
+    const checkOff = 'background:rgba(255,255,255,0.18);border:2px solid rgba(255,255,255,0.5);';
+    const wallpapers = {
+      Sunset: 'background:radial-gradient(circle at 18% 12%,#ffd6e8,transparent 52%),radial-gradient(circle at 88% 20%,#c2e9ff,transparent 50%),radial-gradient(circle at 30% 88%,#d8c8ff,transparent 55%),radial-gradient(circle at 82% 92%,#ffe0f0,transparent 55%),linear-gradient(160deg,#ffe9f5,#ece7ff 55%,#e0f3ff);',
+      Mint: 'background:radial-gradient(circle at 18% 12%,#cdeedd,transparent 52%),radial-gradient(circle at 88% 20%,#bfe3ee,transparent 50%),radial-gradient(circle at 30% 88%,#e4e0fb,transparent 55%),radial-gradient(circle at 82% 92%,#d7f5e8,transparent 55%),linear-gradient(160deg,#e3f7ee,#e6f2fb 55%,#ece7fb);',
+      Lavender: 'background:radial-gradient(circle at 18% 12%,#e8f0ff,transparent 52%),radial-gradient(circle at 88% 20%,#f3e6ff,transparent 50%),radial-gradient(circle at 30% 88%,#ffe6f0,transparent 55%),radial-gradient(circle at 82% 92%,#e6ecff,transparent 55%),linear-gradient(160deg,#eef0ff,#f5e9ff 55%,#ffeef5);',
+    };
+    const wallpaperStyle = wallpapers[this.props.wallpaper] || wallpapers.Sunset;
+
+    // ---- tasks ----
+    const order = t => (t.done ? 1e12 : this.dueMeta(t.due).days * 1e6 + 0);
+    const tasks = this.state.tasks.slice().sort((a,b) => order(a) - order(b)).map(t => {
+      const m = this.dueMeta(t.due);
+      return {
+        ...t,
+        label: t.done ? 'Done' : m.label,
+        pillStyle: t.done ? 'background:rgba(52,199,89,0.85);color:#fff;' : `background:${m.bg};color:${m.fg};`,
+        titleStyle: t.done ? 'color:#a49eb8;text-decoration:line-through;' : 'color:#2a2536;',
+        checkStyle: t.done ? checkOn : checkOff,
+        toggle: () => this.setState(s => ({ tasks: s.tasks.map(x => x.id === t.id ? { ...x, done: !x.done } : x) })),
+        remove: () => this.setState(s => ({ tasks: s.tasks.filter(x => x.id !== t.id) })),
+      };
+    });
+    const open = this.state.tasks.filter(t => !t.done);
+    const dueSoon = open.filter(t => this.dueMeta(t.due).days <= 1);
+    const next = tasks.find(t => !t.done) || { title: 'All clear 🎉', label: '', pillStyle: '' };
+    const nm = next.due !== undefined ? this.dueMeta(next.due) : { bg: 'transparent', fg: '#2a2536' };
+
+    // ---- subscriptions ----
+    const rawSubs = [
+      { icon: '🎬', name: 'Netflix', category: 'Streaming', amount: 15.49, due: 9 },
+      { icon: '🎵', name: 'Spotify', category: 'Music', amount: 10.99, due: 1 },
+      { icon: '☁️', name: 'iCloud+', category: 'Software', amount: 2.99, due: 17 },
+      { icon: '🤖', name: 'ChatGPT Plus', category: 'Software', amount: 20.00, due: 4 },
+      { icon: '🏋️', name: 'Equinox', category: 'Fitness', amount: 45.00, due: 0 },
+      { icon: '📺', name: 'YouTube Premium', category: 'Streaming', amount: 13.99, due: 22 },
+      { icon: '📰', name: 'NYT', category: 'News', amount: 4.25, due: 14 },
+    ];
+    const total = rawSubs.reduce((a, s) => a + s.amount, 0);
+    const usd = n => '$' + n.toFixed(2);
+    const usd0 = n => '$' + n.toFixed(0);
+    const iso = n => { const x = new Date(); x.setHours(0,0,0,0); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+    const subs = rawSubs.map(s => {
+      const m = this.dueMeta(iso(s.due));
+      return { ...s, cost: usd(s.amount), renew: m.days <= 7 ? m.label : this.fmt(iso(s.due)), pillStyle: `background:${m.bg};color:${m.fg};` };
+    });
+    const catMap = {};
+    rawSubs.forEach(s => { catMap[s.category] = (catMap[s.category] || 0) + s.amount; });
+    const categories = Object.keys(catMap).sort((a,b)=>catMap[b]-catMap[a]).map(k => ({ name: k, total: usd0(catMap[k]) }));
+
+    // ---- workout ----
+    const workout = [
+      { name: 'Bench Press', scheme: '4 × 8', weight: '185 lb', pr: true },
+      { name: 'Overhead Press', scheme: '3 × 10', weight: '95 lb', pr: false },
+      { name: 'Incline DB Press', scheme: '3 × 12', weight: '60 lb', pr: false },
+      { name: 'Cable Fly', scheme: '3 × 15', weight: '30 lb', pr: false },
+      { name: 'Triceps Pushdown', scheme: '3 × 15', weight: '55 lb', pr: true },
+    ];
+    const volRaw = [{ day: 'M', v: 62 }, { day: 'T', v: 48 }, { day: 'W', v: 80 }, { day: 'T', v: 30 }, { day: 'F', v: 92 }, { day: 'S', v: 70 }, { day: 'S', v: 12 }];
+    const maxV = Math.max(...volRaw.map(x => x.v));
+    const volume = volRaw.map(x => ({ day: x.day, style: `height:${Math.max(8, Math.round(x.v / maxV * 100))}%;` }));
+    const prs = [{ lift: 'Bench', value: '205' }, { lift: 'Squat', value: '285' }, { lift: 'Deadlift', value: '335' }];
+
+    // ---- peptides ----
+    const doses = this.state.doses.map(dz => ({
+      ...dz,
+      checkStyle: dz.taken ? checkOn : checkOff,
+      titleStyle: dz.taken ? 'color:#a49eb8;text-decoration:line-through;' : 'color:#2a2536;',
+      toggle: () => this.setState(s => ({ doses: s.doses.map(x => x.id === dz.id ? { ...x, taken: !x.taken } : x) })),
+    }));
+    const inventory = [
+      { name: 'BPC-157', vials: 2, recon: '5 mg vial · 2 mL BAC → 250 mcg = 0.10 mL', dosesLeft: 38, pct: 76 },
+      { name: 'Ipamorelin', vials: 1, recon: '5 mg vial · 2.5 mL BAC → 200 mcg = 0.10 mL', dosesLeft: 14, pct: 28 },
+      { name: 'TB-500', vials: 3, recon: '5 mg vial · 2 mL BAC → 2 mg = 0.80 mL', dosesLeft: 7, pct: 88 },
+    ].map(i => ({ ...i, barStyle: `width:${i.pct}%;` }));
+
+    return {
+      isHome: screen === 'home', isWorkout: screen === 'workout', isSubs: screen === 'subs', isPeptides: screen === 'peptides',
+      atHome: screen === 'home', atWorkout: screen === 'workout', atSubs: screen === 'subs', atPeptides: screen === 'peptides',
+      goHome: this.go('home'), goGym: this.go('workout'), goFinance: this.go('subs'), goPeptides: this.go('peptides'),
+      greeting: 'Good morning', userName: this.props.userName || 'Alex',
+      wallpaperStyle, accentDiag, accentVert, accentHoriz,
+      dateStr: new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+      dueSummary: dueSoon.length ? (dueSoon.length + ' due today or tomorrow') : 'nothing urgent today',
+      dueCount: dueSoon.length, openCount: open.length,
+      nextTitle: next.title, nextLabel: next.label,
+      nextPillStyle: `background:${nm.bg};color:${nm.fg || '#fff'};`,
+      tasks,
+      newTitle: this.state.newTitle, newDue: this.state.newDue,
+      onTitle: e => this.setState({ newTitle: e.target.value }),
+      onDue: e => this.setState({ newDue: e.target.value }),
+      onKey: e => { if (e.key === 'Enter') this.addTask(); },
+      addTask: () => this.addTask(),
+      subs, categories, monthlyTotal: usd0(total), subCount: rawSubs.length,
+      workout, volume, prs,
+      doses, inventory,
+    };
+  }
+}
+</script>
+</body>
+</html>

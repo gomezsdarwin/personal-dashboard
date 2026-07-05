@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+</style>
+</helmet>
+
+<div style="padding:60px;background:#f3eef8;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;min-width:max-content;">
+
+  <div style="margin:0 0 44px;">
+    <div style="font-size:32px;font-weight:700;letter-spacing:-0.5px;color:#2a2536;">Personal Dashboard</div>
+    <div style="font-size:16px;color:#7a7490;margin-top:8px;max-width:640px;">Liquid-glass home screen with a live to-do list — tap the bottom tab bar to open Gym, Finance, and Peptides.</div>
+  </div>
+
+  <section id="1" style="display:flex;gap:56px;align-items:flex-start;">
+    <div id="1a" style="display:flex;flex-direction:column;align-items:center;">
+      <dc-import name="Phone" user-name="{{ userName }}" accent="{{ accent }}" wallpaper="{{ wallpaper }}" hint-size="414px,868px"></dc-import>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:600,&quot;height&quot;:950},&quot;userName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Alex&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:[&quot;#c8b4ff&quot;,&quot;#9db8ff&quot;],&quot;options&quot;:[[&quot;#c8b4ff&quot;,&quot;#9db8ff&quot;],[&quot;#ffb6c1&quot;,&quot;#ffd39b&quot;],[&quot;#9be8c9&quot;,&quot;#8ec8f2&quot;],[&quot;#f7b8d0&quot;,&quot;#c9a6f2&quot;]],&quot;tsType&quot;:&quot;string[]&quot;},&quot;wallpaper&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Sunset&quot;,&quot;Mint&quot;,&quot;Lavender&quot;],&quot;default&quot;:&quot;Sunset&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      userName: this.props.userName ?? 'Alex',
+      accent: this.props.accent ?? ['#c8b4ff', '#9db8ff'],
+      wallpaper: this.props.wallpaper ?? 'Sunset',
+    };
+  }
+}
+</script>
+</body>
+</html>
