@@ -7,7 +7,7 @@ export type UseRepoResult<T extends { id: string; user_id: string; created_at: s
   rows: T[];
   loading: boolean;
   insert: (row: NewRow<T>) => Promise<T>;
-  update: (id: string, patch: Partial<T>) => Promise<T>;
+  update: (id: string, patch: Partial<NewRow<T>>) => Promise<T>;
   remove: (id: string) => Promise<void>;
 };
 
@@ -70,7 +70,7 @@ export function useRepo<K extends TableName>(
   );
 
   const update = useCallback(
-    async (id: string, patch: Partial<T>) => {
+    async (id: string, patch: Partial<NewRow<T>>) => {
       setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
       try {
         const updated = await repoRef.current.update(id, patch);
@@ -87,8 +87,10 @@ export function useRepo<K extends TableName>(
 
   const remove = useCallback(async (id: string) => {
     let removedRow: T | undefined;
+    let removedIndex = -1;
     setRows((prev) => {
-      removedRow = prev.find((r) => r.id === id);
+      removedIndex = prev.findIndex((r) => r.id === id);
+      removedRow = removedIndex >= 0 ? prev[removedIndex] : undefined;
       return prev.filter((r) => r.id !== id);
     });
     try {
@@ -96,7 +98,12 @@ export function useRepo<K extends TableName>(
     } catch (err) {
       if (removedRow) {
         const restored = removedRow;
-        setRows((prev) => [...prev, restored]);
+        const at = removedIndex;
+        setRows((prev) => {
+          const next = prev.slice();
+          next.splice(at >= 0 && at <= next.length ? at : next.length, 0, restored);
+          return next;
+        });
       }
       throw err;
     }

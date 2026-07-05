@@ -37,6 +37,19 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
         end={{ x: 0.9, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
+      {/* Pastel mesh approximation: RN has no radial-gradient, so each mesh color
+          is layered as a soft corner wash (color -> transparent), matching the
+          top-left / top-right / bottom-left / bottom-right stops in HANDOFF. */}
+      {mesh.radial.map((c, i) => (
+        <LinearGradient
+          key={i}
+          colors={[c, 'transparent']}
+          start={{ x: 0.5, y: 0.5 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.blob, MESH_CORNERS[i]]}
+          pointerEvents="none"
+        />
+      ))}
       <ScrollView
         style={styles.scroller}
         contentContainerStyle={[
@@ -55,9 +68,24 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
   );
 }
 
+// Corner anchors for the 4 mesh washes (top-left, top-right, bottom-left, bottom-right).
+const MESH_CORNERS: ViewStyle[] = [
+  { top: '-10%', left: '-15%' },
+  { top: '-5%', right: '-20%' },
+  { bottom: '-8%', left: '-10%' },
+  { bottom: '-10%', right: '-15%' },
+];
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  blob: {
+    position: 'absolute',
+    width: '75%',
+    height: '55%',
+    borderRadius: 500,
+    opacity: 0.85,
   },
   scroller: {
     flex: 1,

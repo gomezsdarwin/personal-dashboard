@@ -193,7 +193,7 @@ function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove
   const gradient = accent.horizontal();
 
   return (
-    <GlassCard style={styles.inventoryCardGap} contentStyle={styles.inventoryContent}>
+    <GlassCard radius={radius.inventoryCard} style={styles.inventoryCardGap} contentStyle={styles.inventoryContent}>
       <View style={styles.inventoryHeaderRow}>
         <Text style={styles.inventoryName}>{item.name}</Text>
         <Text style={styles.inventoryVials}>{item.vials} vials on hand</Text>

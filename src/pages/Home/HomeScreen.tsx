@@ -146,9 +146,21 @@ export default function HomeScreen() {
             placeholderTextColor={color.text.quaternary}
             style={styles.input}
           />
-          <Pressable style={styles.dueTrigger} onPress={() => setShowPicker(true)}>
-            <Text style={styles.dueTriggerText}>{newDue ? fmt(toIsoDate(newDue)) : '📅'}</Text>
-          </Pressable>
+          {Platform.OS === 'web' ? (
+            <TextInput
+              value={newDue ? toIsoDate(newDue) : ''}
+              onChangeText={(txt) =>
+                setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
+              }
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={color.text.quaternary}
+              style={styles.webDueInput}
+            />
+          ) : (
+            <Pressable style={styles.dueTrigger} onPress={() => setShowPicker(true)}>
+              <Text style={styles.dueTriggerText}>{newDue ? fmt(toIsoDate(newDue)) : '📅'}</Text>
+            </Pressable>
+          )}
           <Pressable onPress={handleAddTask}>
             <LinearGradient
               colors={diag.colors}
@@ -161,7 +173,7 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {showPicker ? (
+        {showPicker && Platform.OS !== 'web' ? (
           <DateTimePicker
             value={newDue ?? new Date()}
             mode="date"
@@ -287,6 +299,19 @@ const styles = StyleSheet.create({
   dueTriggerText: {
     fontSize: 13,
     color: color.text.secondary,
+  },
+  webDueInput: {
+    flexBasis: 120,
+    flexGrow: 0,
+    flexShrink: 0,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    fontSize: 13,
+    color: color.text.primary,
   },
   addButton: {
     width: 42,

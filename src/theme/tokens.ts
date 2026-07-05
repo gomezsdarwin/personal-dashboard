@@ -17,6 +17,22 @@ export const color = {
   },
   hairline: 'rgba(120,110,150,0.14)',
   track: 'rgba(120,110,150,0.16)',
+
+  /** Solid accent color for active-state text/underlines (e.g. sub-nav tabs) —
+   * a readable-on-light-glass pick from the same family as accentDefault. */
+  accentText: '#6a56d4',
+
+  /** Semantic status colors (Gym tab hit/miss/pending states, and any future
+   * success/danger use) — new additions alongside the pre-existing
+   * doneColor/urgencyScale precedents, since those are date-urgency-specific. */
+  success: '#2f9e5b',
+  successBg: 'rgba(52,199,89,0.14)',
+  successBorder: 'rgba(52,199,89,0.32)',
+  danger: '#d1394f',
+  dangerBg: 'rgba(255,59,72,0.12)',
+  dangerBorder: 'rgba(255,59,72,0.30)',
+  warning: '#b8860b',
+  warningBg: 'rgba(255,196,20,0.20)',
 } as const;
 
 /** Type scale — { size, weight, letterSpacing? } in px / RN font-weight strings. */
@@ -146,8 +162,8 @@ export type WallpaperName = 'Sunset' | 'Mint' | 'Lavender';
 
 /**
  * Wallpaper mesh stops. RN LinearGradient can't do CSS radial-gradient meshes natively,
- * so AppShell approximates the mesh with a base linear gradient using these stops
- * (colors ordered top-left -> bottom-right, blended) — visually close pastel wash.
+ * so AppShell renders `linear` as the base gradient and layers the 4 `radial` colors as
+ * soft corner washes (color -> transparent) to approximate HANDOFF's pastel mesh.
  */
 export const wallpaperMesh: Record<
   WallpaperName,

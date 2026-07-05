@@ -5,7 +5,7 @@ import type { NewRow, TableName, TableRowMap } from './types';
 export type Repo<T extends { id: string; user_id: string; created_at: string }> = {
   list(): Promise<T[]>;
   insert(row: NewRow<T>): Promise<T>;
-  update(id: string, patch: Partial<T>): Promise<T>;
+  update(id: string, patch: Partial<NewRow<T>>): Promise<T>;
   remove(id: string): Promise<void>;
 };
 
@@ -45,7 +45,10 @@ export function createRepo<K extends TableName>(table: K): Repo<TableRowMap[K]> 
   return {
     async list(): Promise<T[]> {
       if (isSupabaseConfigured && supabase) {
-        const { data, error } = await supabase.from(table).select('*');
+        const { data, error } = await supabase
+          .from(table)
+          .select('*')
+          .order('created_at', { ascending: false });
         if (error) throw error;
         return (data ?? []) as T[];
       }
@@ -69,7 +72,7 @@ export function createRepo<K extends TableName>(table: K): Repo<TableRowMap[K]> 
       return created;
     },
 
-    async update(id: string, patch: Partial<T>): Promise<T> {
+    async update(id: string, patch: Partial<NewRow<T>>): Promise<T> {
       if (isSupabaseConfigured && supabase) {
         const { data, error } = await supabase
           .from(table)

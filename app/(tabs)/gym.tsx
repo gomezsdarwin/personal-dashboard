@@ -1,3 +1,3 @@
-import GymScreen from '../../src/pages/Gym/GymScreen';
+import GymTab from '../../src/pages/Gym/GymTab';
 
-export default GymScreen;
+export default GymTab;

@@ -30,6 +30,7 @@ export function AuthGate({ children }: Props) {
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -38,10 +39,17 @@ export function AuthGate({ children }: Props) {
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setCheckingSession(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        setSession(data.session);
+        setCheckingSession(false);
+      })
+      .catch(() => {
+        // Session check failed (e.g. offline at launch) — don't strand the user
+        // on the spinner; fall through to the sign-in form.
+        setCheckingSession(false);
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
@@ -71,17 +79,34 @@ export function AuthGate({ children }: Props) {
   const onSubmit = async () => {
     if (!supabase) return;
     setError(null);
+    setNotice(null);
     if (!email.trim() || !password) {
       setError('Enter an email and password.');
       return;
     }
     setSubmitting(true);
-    const { error: authError } =
-      mode === 'sign-in'
-        ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
-        : await supabase.auth.signUp({ email: email.trim(), password });
-    setSubmitting(false);
-    if (authError) setError(authError.message);
+    if (mode === 'sign-in') {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      setSubmitting(false);
+      if (authError) setError(authError.message);
+    } else {
+      const { data, error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
+      setSubmitting(false);
+      if (authError) {
+        setError(authError.message);
+      } else if (!data.session) {
+        // Email confirmation required — no session yet. Tell the user instead of
+        // leaving them on a silent form.
+        setNotice('Check your email to confirm your account, then sign in.');
+        setMode('sign-in');
+      }
+    }
   };
 
   return (
@@ -118,6 +143,7 @@ export function AuthGate({ children }: Props) {
           />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
           <Pressable onPress={onSubmit} disabled={submitting} style={styles.submitWrapper}>
             <LinearGradient
@@ -189,6 +215,11 @@ const styles = StyleSheet.create({
   },
   error: {
     color: 'rgba(230,40,60,0.95)',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  notice: {
+    color: '#5a4200',
     fontSize: 13,
     marginBottom: 8,
   },

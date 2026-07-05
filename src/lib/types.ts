@@ -12,33 +12,45 @@ export type TaskRow = {
   done: boolean;
 };
 
-export type ExerciseRow = {
+/** One set of a logged exercise: `weight`/`reps` intentionally allow string
+ * (blank input state) as well as number, mirroring the original web spec. */
+export type GymSet = {
+  weight: number | string;
+  reps: number | string;
+};
+
+/** One exercise entry within a session's `exercises` JSONB array. `slot` is the
+ * owning library slot's primary exercise id (see src/data/workouts.ts); `id` is
+ * the actually-selected primary/alt exercise id for that slot. */
+export type GymSessionExercise = {
+  slot: string;
   id: string;
-  user_id: string;
-  created_at: string;
   name: string;
-  scheme: string;
-  weight: string;
-  is_pr: boolean;
-  day_label: string;
-  position: number;
+  muscle: string;
+  sets: [GymSet, GymSet, GymSet];
 };
 
-export type WorkoutSetRow = {
+export type GymSessionRow = {
   id: string;
   user_id: string;
   created_at: string;
-  day_of_week: number; // 0=Mon .. 6=Sun
-  volume: number;
-  logged_on: string; // date
+  date: string; // date (YYYY-MM-DD)
+  split: string; // split id, e.g. 'push'
+  exercises: GymSessionExercise[];
 };
 
-export type PersonalRecordRow = {
+/** One entry in a split's `config` JSONB array. Library entries reference a
+ * MUSCLES slot; custom entries carry their own name/weight/muscle inline. */
+export type GymSplitConfigEntry =
+  | { slot: string; id: string; custom?: false }
+  | { slot: string; id: string; name: string; defaultWeight: number; muscle: string; custom: true };
+
+export type GymSplitConfigRow = {
   id: string;
   user_id: string;
   created_at: string;
-  lift: string;
-  value: string;
+  split_id: string;
+  config: GymSplitConfigEntry[];
 };
 
 export type SubscriptionRow = {
@@ -77,9 +89,8 @@ export type PeptideInventoryRow = {
 /** Table name -> row type map, used by the generic Repo<T> factory in src/lib/db.ts. */
 export type TableRowMap = {
   tasks: TaskRow;
-  exercises: ExerciseRow;
-  workout_sets: WorkoutSetRow;
-  personal_records: PersonalRecordRow;
+  gym_sessions: GymSessionRow;
+  gym_split_config: GymSplitConfigRow;
   subscriptions: SubscriptionRow;
   peptide_doses: PeptideDoseRow;
   peptide_inventory: PeptideInventoryRow;

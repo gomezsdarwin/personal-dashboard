@@ -8,6 +8,8 @@ type Props = {
   style?: StyleProp<ViewStyle>;
   /** Override inner content padding (default matches HANDOFF card padding 16-18px). */
   contentStyle?: StyleProp<ViewStyle>;
+  /** Override the corner radius (default = HANDOFF card 28px; e.g. 24 for inventory cards). */
+  radius?: number;
 };
 
 /**
@@ -15,13 +17,14 @@ type Props = {
  * rgba(255,255,255,0.16) tint, blur(34) saturate(1.9), 1px rgba(255,255,255,0.4) border,
  * 28px radius, soft purple drop shadow + inset highlight.
  */
-export function GlassCard({ children, style, contentStyle }: Props) {
+export function GlassCard({ children, style, contentStyle, radius }: Props) {
   const g = glass.card;
+  const borderRadius = radius ?? g.borderRadius;
   return (
     <View
       style={[
         {
-          borderRadius: g.borderRadius,
+          borderRadius,
           shadowColor: g.shadowColor,
           shadowOpacity: g.shadowOpacity,
           shadowRadius: g.shadowRadius,
@@ -31,7 +34,7 @@ export function GlassCard({ children, style, contentStyle }: Props) {
         style,
       ]}
     >
-      <View style={[styles.clip, { borderRadius: g.borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth }]}>
+      <View style={[styles.clip, { borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth }]}>
         <BlurView intensity={g.intensity} tint={g.tint} style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: g.backgroundColor }]} />
         <View style={styles.topHighlight} />
