@@ -17,7 +17,8 @@ import { dueMeta, fmt } from '../../lib/dueDate';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { NewRow, TaskRow } from '../../lib/types';
 import { accent } from '../../theme/accent';
-import { color, type as typeScale } from '../../theme/tokens';
+import { type as typeScale } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 
 /** Same relative-day helper as Phone.dc.html's `d(n)` — local "today" offset by n days, ISO date. */
 function relativeIso(n: number): string {
@@ -52,6 +53,7 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
+  const { palette, glass, mode, setMode } = useTheme();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
@@ -120,20 +122,31 @@ export default function HomeScreen() {
 
   const diag = accent.diagonal();
 
+  // Temporary dev-only affordance for QA'ing both themes: long-press the greeting name to
+  // flip light/dark. Throwaway — will be replaced by a real Settings toggle in Phase 3.
+  const toggleThemeForQa = () => setMode(mode === 'dark' ? 'light' : 'dark');
+
+  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
+
   return (
     <AppShell>
       <View style={styles.header}>
-        <Text style={styles.greeting}>Good morning</Text>
-        <Text style={styles.name}>{userName}</Text>
-        <Text style={styles.dateLine}>
+        <Text style={[styles.greeting, { color: palette.text.secondary }]}>Good morning</Text>
+        <Text
+          style={[styles.name, { color: palette.text.primary }]}
+          onLongPress={toggleThemeForQa}
+        >
+          {userName}
+        </Text>
+        <Text style={[styles.dateLine, { color: palette.text.secondary }]}>
           {dateStr} · {dueSummary}
         </Text>
       </View>
 
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>To-Do</Text>
-          <Text style={styles.openCount}>{openCount} open</Text>
+          <Text style={[styles.cardTitle, { color: palette.text.primaryAlt }]}>To-Do</Text>
+          <Text style={[styles.openCount, { color: palette.text.quaternary }]}>{openCount} open</Text>
         </View>
 
         <View style={styles.addRow}>
@@ -143,8 +156,8 @@ export default function HomeScreen() {
             onSubmitEditing={handleAddTask}
             returnKeyType="done"
             placeholder="Add a task…"
-            placeholderTextColor={color.text.quaternary}
-            style={styles.input}
+            placeholderTextColor={palette.text.quaternary}
+            style={[styles.input, inputStyle, { color: palette.text.primary }]}
           />
           {Platform.OS === 'web' ? (
             <TextInput
@@ -153,12 +166,14 @@ export default function HomeScreen() {
                 setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
               }
               placeholder="YYYY-MM-DD"
-              placeholderTextColor={color.text.quaternary}
-              style={styles.webDueInput}
+              placeholderTextColor={palette.text.quaternary}
+              style={[styles.webDueInput, inputStyle, { color: palette.text.primary }]}
             />
           ) : (
-            <Pressable style={styles.dueTrigger} onPress={() => setShowPicker(true)}>
-              <Text style={styles.dueTriggerText}>{newDue ? fmt(toIsoDate(newDue)) : '📅'}</Text>
+            <Pressable style={[styles.dueTrigger, inputStyle]} onPress={() => setShowPicker(true)}>
+              <Text style={[styles.dueTriggerText, { color: palette.text.secondary }]}>
+                {newDue ? fmt(toIsoDate(newDue)) : '📅'}
+              </Text>
             </Pressable>
           )}
           <Pressable onPress={handleAddTask}>
@@ -183,7 +198,7 @@ export default function HomeScreen() {
         ) : null}
 
         {sortedTasks.map((t) => (
-          <View key={t.id} style={styles.taskRow}>
+          <View key={t.id} style={[styles.taskRow, { borderTopColor: palette.hairline }]}>
             <Pressable
               onPress={() => update(t.id, { done: !t.done })}
               style={styles.checkboxWrap}
@@ -198,12 +213,16 @@ export default function HomeScreen() {
                   <Text style={styles.checkmark}>✓</Text>
                 </LinearGradient>
               ) : (
-                <View style={[styles.checkbox, styles.checkboxOff]} />
+                <View style={[styles.checkbox, styles.checkboxOff, { borderColor: glass.borderElevated }]} />
               )}
             </Pressable>
 
             <Text
-              style={[styles.taskTitle, t.done && styles.taskTitleDone]}
+              style={[
+                styles.taskTitle,
+                { color: palette.text.primaryAlt },
+                t.done && [styles.taskTitleDone, { color: palette.text.dimmed }],
+              ]}
               numberOfLines={1}
             >
               {t.title}
@@ -212,7 +231,7 @@ export default function HomeScreen() {
             <UrgencyPill dueDate={t.due_date} done={t.done} />
 
             <Pressable onPress={() => remove(t.id)} style={styles.removeWrap}>
-              <Text style={styles.removeGlyph}>×</Text>
+              <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
             </Pressable>
           </View>
         ))}
@@ -230,19 +249,16 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: typeScale.greetingLabel.fontSize,
     fontWeight: typeScale.greetingLabel.fontWeight,
-    color: '#4a4558',
   },
   name: {
     fontSize: typeScale.greetingName.fontSize,
     fontWeight: typeScale.greetingName.fontWeight,
     letterSpacing: typeScale.greetingName.letterSpacing,
-    color: color.text.primary,
     marginTop: 2,
     lineHeight: 46,
   },
   dateLine: {
     fontSize: typeScale.body.fontSize,
-    color: color.text.secondary,
     marginTop: 8,
   },
   card: {
@@ -258,12 +274,10 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: typeScale.cardTitleLg.fontSize,
     fontWeight: typeScale.cardTitleLg.fontWeight,
-    color: color.text.primaryAlt,
   },
   openCount: {
     fontSize: typeScale.metaMedium.fontSize,
     fontWeight: typeScale.metaMedium.fontWeight,
-    color: color.text.quaternary,
   },
   addRow: {
     flexDirection: 'row',
@@ -274,14 +288,11 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
     fontSize: 15,
-    color: color.text.primary,
   },
   dueTrigger: {
     flexBasis: 44,
@@ -289,29 +300,23 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 6,
   },
   dueTriggerText: {
     fontSize: 13,
-    color: color.text.secondary,
   },
   webDueInput: {
     flexBasis: 120,
     flexGrow: 0,
     flexShrink: 0,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 10,
     fontSize: 13,
-    color: color.text.primary,
   },
   addButton: {
     width: 42,
@@ -332,7 +337,6 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 6,
     borderTopWidth: 1,
-    borderTopColor: color.hairline,
   },
   checkboxWrap: {
     flexBasis: 24,
@@ -349,7 +353,6 @@ const styles = StyleSheet.create({
   checkboxOff: {
     backgroundColor: 'rgba(255,255,255,0.18)',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.5)',
   },
   checkmark: {
     color: '#fff',
@@ -361,10 +364,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
     fontSize: typeScale.itemTitleMedium.fontSize,
     fontWeight: typeScale.itemTitleMedium.fontWeight,
-    color: color.text.primaryAlt,
   },
   taskTitleDone: {
-    color: color.text.dimmed,
     textDecorationLine: 'line-through',
   },
   removeWrap: {
@@ -377,7 +378,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removeGlyph: {
-    color: color.text.faint,
     fontSize: 16,
     lineHeight: 16,
   },

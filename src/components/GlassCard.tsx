@@ -1,7 +1,9 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { glass } from '../theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '../theme/ThemeContext';
+import { radius } from '../theme/tokens';
 
 type Props = {
   children?: React.ReactNode;
@@ -13,48 +15,50 @@ type Props = {
 };
 
 /**
- * Translucent frosted-glass card per HANDOFF's "Card" recipe:
- * rgba(255,255,255,0.16) tint, blur(34) saturate(1.9), 1px rgba(255,255,255,0.4) border,
- * 28px radius, soft purple drop shadow + inset highlight.
+ * Real frosted liquid-glass card: BlurView backdrop blur, theme-driven translucent tint
+ * fill, and a specular border simulated via a 1px LinearGradient wrapper (brightest at
+ * top-left, fading toward the bottom-right) rather than a flat solid border color.
  */
-export function GlassCard({ children, style, contentStyle, radius }: Props) {
-  const g = glass.card;
-  const borderRadius = radius ?? g.borderRadius;
+export function GlassCard({ children, style, contentStyle, radius: radiusOverride }: Props) {
+  const { glass } = useTheme();
+  const borderRadius = radiusOverride ?? radius.card;
+
   return (
     <View
       style={[
         {
           borderRadius,
-          shadowColor: g.shadowColor,
-          shadowOpacity: g.shadowOpacity,
-          shadowRadius: g.shadowRadius,
-          shadowOffset: g.shadowOffset,
+          shadowColor: 'rgba(0,0,0,0.22)',
+          shadowOpacity: 1,
+          shadowRadius: 34,
+          shadowOffset: { width: 0, height: 12 },
           elevation: 6,
         },
         style,
       ]}
     >
-      <View style={[styles.clip, { borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth }]}>
-        <BlurView intensity={g.intensity} tint={g.tint} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: g.backgroundColor }]} />
-        <View style={styles.topHighlight} />
-        <View style={[styles.content, contentStyle]}>{children}</View>
-      </View>
+      <LinearGradient
+        colors={glass.borderGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.borderWrap, { borderRadius }]}
+      >
+        <View style={[styles.clip, { borderRadius: Math.max(borderRadius - 1, 0) }]}>
+          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+          <View style={[styles.content, contentStyle]}>{children}</View>
+        </View>
+      </LinearGradient>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  borderWrap: {
+    padding: 1,
+  },
   clip: {
     overflow: 'hidden',
-  },
-  topHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   content: {
     padding: 16,

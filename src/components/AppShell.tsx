@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, type WallpaperName } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 import { defaultArtwork } from '../data/artworks';
 
 type Props = {
@@ -25,6 +26,7 @@ type Props = {
  */
 export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props) {
   const insets = useSafeAreaInsets();
+  const { glass } = useTheme();
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(8)).current;
 
@@ -38,9 +40,12 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
   return (
     <View style={styles.root}>
       <ImageBackground source={defaultArtwork.source} resizeMode="cover" style={StyleSheet.absoluteFill}>
-        {/* Hardcoded dark scrim for legibility of glass cards over the painting.
-            Will become theme-driven (per-artwork/dark-light aware) in a later phase. */}
-        <View style={[StyleSheet.absoluteFill, styles.scrim]} pointerEvents="none" />
+        {/* Theme-driven scrim (dark/light-aware) for legibility of glass cards over the
+            painting. Artwork switching itself is still Phase 3+ scope. */}
+        <View
+          style={[StyleSheet.absoluteFill, { backgroundColor: glass.scrim }]}
+          pointerEvents="none"
+        />
       </ImageBackground>
       <ScrollView
         style={styles.scroller}
@@ -63,9 +68,6 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  scrim: {
-    backgroundColor: 'rgba(5,10,20,0.35)',
   },
   scroller: {
     flex: 1,

@@ -1,8 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { glass } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
+import { radius } from '../theme/tokens';
 
 /**
  * Minimal structural subset of React Navigation's BottomTabBarProps that this
@@ -46,48 +48,53 @@ const TAB_LABEL: Record<string, string> = {
  */
 export function TabBar({ state, descriptors, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
-  const g = glass.tabBar;
+  const { glass, palette } = useTheme();
+  const borderRadius = radius.tabBar;
 
   return (
     <View style={[styles.wrapper, { bottom: Math.max(insets.bottom, 16) }]} pointerEvents="box-none">
-      <View
-        style={[
-          styles.clip,
-          { borderRadius: g.borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth },
-        ]}
+      <LinearGradient
+        colors={glass.borderGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.borderWrap, { borderRadius }]}
       >
-        <BlurView intensity={g.intensity} tint={g.tint} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: g.backgroundColor }]} />
-        <View style={styles.row}>
-          {state.routes.map((route, index) => {
-            const { options } = descriptors[route.key];
-            const isFocused = state.index === index;
-            const label = TAB_LABEL[route.name] ?? (options.title ?? route.name);
-            const icon = TAB_ICON[route.name] ?? '•';
+        <View style={[styles.clip, { borderRadius: Math.max(borderRadius - 1, 0) }]}>
+          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+          <View style={styles.row}>
+            {state.routes.map((route, index) => {
+              const { options } = descriptors[route.key];
+              const isFocused = state.index === index;
+              const label = TAB_LABEL[route.name] ?? (options.title ?? route.name);
+              const icon = TAB_ICON[route.name] ?? '•';
 
-            const onPress = () => {
-              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
+              const onPress = () => {
+                const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+                if (!isFocused && !event.defaultPrevented) {
+                  navigation.navigate(route.name);
+                }
+              };
 
-            return (
-              <Pressable
-                key={route.key}
-                onPress={onPress}
-                accessibilityRole="button"
-                accessibilityState={isFocused ? { selected: true } : {}}
-                style={styles.tab}
-              >
-                {isFocused ? <View style={styles.highlight} /> : null}
-                <Text style={styles.icon}>{icon}</Text>
-                <Text style={styles.label}>{label}</Text>
-              </Pressable>
-            );
-          })}
+              return (
+                <Pressable
+                  key={route.key}
+                  onPress={onPress}
+                  accessibilityRole="button"
+                  accessibilityState={isFocused ? { selected: true } : {}}
+                  style={styles.tab}
+                >
+                  {isFocused ? (
+                    <View style={[styles.highlight, { backgroundColor: glass.borderElevated }]} />
+                  ) : null}
+                  <Text style={styles.icon}>{icon}</Text>
+                  <Text style={[styles.label, { color: palette.text.secondary }]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      </LinearGradient>
     </View>
   );
 }
@@ -98,14 +105,17 @@ const styles = StyleSheet.create({
     left: 16,
     right: 16,
   },
-  clip: {
-    height: 72,
-    overflow: 'hidden',
-    shadowColor: 'rgba(90,70,130,0.22)',
+  borderWrap: {
+    padding: 1,
+    shadowColor: 'rgba(0,0,0,0.28)',
     shadowOpacity: 1,
     shadowRadius: 40,
     shadowOffset: { width: 0, height: 14 },
     elevation: 10,
+  },
+  clip: {
+    height: 72,
+    overflow: 'hidden',
   },
   row: {
     flex: 1,
@@ -128,7 +138,6 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.28)',
   },
   icon: {
     fontSize: 25,
@@ -137,7 +146,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#4a4558',
   },
 });
 
