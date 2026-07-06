@@ -11,6 +11,7 @@ import DateTimePicker, { type DateTimePickerEvent } from '@react-native-communit
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
+import { HeaderBar } from '../../components/HeaderBar';
 import { UrgencyPill } from '../../components/UrgencyPill';
 import { useRepo } from '../../hooks/useRepo';
 import { dueMeta, fmt } from '../../lib/dueDate';
@@ -53,7 +54,7 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
-  const { palette, glass, mode, setMode } = useTheme();
+  const { palette, glass } = useTheme();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
@@ -122,22 +123,15 @@ export default function HomeScreen() {
 
   const diag = accent.diagonal();
 
-  // Temporary dev-only affordance for QA'ing both themes: long-press the greeting name to
-  // flip light/dark. Throwaway — will be replaced by a real Settings toggle in Phase 3.
-  const toggleThemeForQa = () => setMode(mode === 'dark' ? 'light' : 'dark');
-
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
 
   return (
     <AppShell>
+      <HeaderBar />
+
       <View style={styles.header}>
         <Text style={[styles.greeting, { color: palette.text.secondary }]}>Good morning</Text>
-        <Text
-          style={[styles.name, { color: palette.text.primary }]}
-          onLongPress={toggleThemeForQa}
-        >
-          {userName}
-        </Text>
+        <Text style={[styles.name, { color: palette.text.primary }]}>{userName}</Text>
         <Text style={[styles.dateLine, { color: palette.text.secondary }]}>
           {dateStr} · {dueSummary}
         </Text>

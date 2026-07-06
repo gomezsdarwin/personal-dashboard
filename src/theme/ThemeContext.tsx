@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { palettes, type Palette } from './palettes';
+import { defaultArtworkId } from '../data/artworks';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -10,12 +11,16 @@ type PersistedSettings = {
   mode: ThemeMode;
   glassOpacity: number;
   glassTint: string;
+  artworkId: string;
+  displayName: string;
 };
 
 const DEFAULTS: PersistedSettings = {
   mode: 'dark',
   glassOpacity: 0.12,
   glassTint: '#ffffff',
+  artworkId: defaultArtworkId,
+  displayName: '',
 };
 
 /** Concrete, ready-to-use glass style values derived from the current theme state. */
@@ -47,6 +52,10 @@ export type ThemeContextValue = {
   setGlassOpacity: (value: number) => void;
   glassTint: string;
   setGlassTint: (value: string) => void;
+  artworkId: string;
+  setArtworkId: (value: string) => void;
+  displayName: string;
+  setDisplayName: (value: string) => void;
   palette: Palette;
   glass: GlassRecipe;
 };
@@ -100,10 +109,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(DEFAULTS.mode);
   const [glassOpacity, setGlassOpacity] = useState<number>(DEFAULTS.glassOpacity);
   const [glassTint, setGlassTint] = useState<string>(DEFAULTS.glassTint);
+  const [artworkId, setArtworkId] = useState<string>(DEFAULTS.artworkId);
+  const [displayName, setDisplayName] = useState<string>(DEFAULTS.displayName);
 
   // Load persisted settings on mount. AsyncStorage is inherently async, so a first-frame
   // flash of the default (dark) theme before a persisted light-mode preference loads is
   // possible — acceptable for this phase per the Phase 2 spec.
+  // Older persisted blobs (pre-Phase-3) won't have artworkId/displayName keys — parsed
+  // fields are read individually and missing ones simply keep the useState default above,
+  // so upgrading in place doesn't clobber previously-persisted opacity/mode/tint.
   useEffect(() => {
     let cancelled = false;
     AsyncStorage.getItem(STORAGE_KEY)
@@ -113,6 +127,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (parsed.mode === 'light' || parsed.mode === 'dark') setMode(parsed.mode);
         if (typeof parsed.glassOpacity === 'number') setGlassOpacity(parsed.glassOpacity);
         if (typeof parsed.glassTint === 'string') setGlassTint(parsed.glassTint);
+        if (typeof parsed.artworkId === 'string') setArtworkId(parsed.artworkId);
+        if (typeof parsed.displayName === 'string') setDisplayName(parsed.displayName);
       })
       .catch(() => {
         // Corrupt/unavailable storage — fall back to defaults silently.
@@ -125,11 +141,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Persist on every change (after initial load), so the toggle used for QA and any future
   // Settings UI both stick across reloads.
   useEffect(() => {
-    const payload: PersistedSettings = { mode, glassOpacity, glassTint };
+    const payload: PersistedSettings = { mode, glassOpacity, glassTint, artworkId, displayName };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload)).catch(() => {
       // Best-effort persistence; ignore failures (e.g. storage unavailable).
     });
-  }, [mode, glassOpacity, glassTint]);
+  }, [mode, glassOpacity, glassTint, artworkId, displayName]);
 
   const value = useMemo<ThemeContextValue>(() => {
     return {
@@ -139,10 +155,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setGlassOpacity,
       glassTint,
       setGlassTint,
+      artworkId,
+      setArtworkId,
+      displayName,
+      setDisplayName,
       palette: palettes[mode],
       glass: buildGlass(mode, glassOpacity, glassTint),
     };
-  }, [mode, glassOpacity, glassTint]);
+  }, [mode, glassOpacity, glassTint, artworkId, displayName]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

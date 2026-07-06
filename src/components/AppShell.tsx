@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   ImageBackground,
@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing, type WallpaperName } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
-import { defaultArtwork } from '../data/artworks';
+import { artworks, defaultArtwork } from '../data/artworks';
 
 type Props = {
   children?: React.ReactNode;
@@ -26,7 +26,11 @@ type Props = {
  */
 export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props) {
   const insets = useSafeAreaInsets();
-  const { glass } = useTheme();
+  const { glass, artworkId } = useTheme();
+  const activeArtwork = useMemo(
+    () => artworks.find((a) => a.id === artworkId) ?? defaultArtwork,
+    [artworkId]
+  );
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(8)).current;
 
@@ -39,9 +43,9 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
 
   return (
     <View style={styles.root}>
-      <ImageBackground source={defaultArtwork.source} resizeMode="cover" style={StyleSheet.absoluteFill}>
+      <ImageBackground source={activeArtwork.source} resizeMode="cover" style={StyleSheet.absoluteFill}>
         {/* Theme-driven scrim (dark/light-aware) for legibility of glass cards over the
-            painting. Artwork switching itself is still Phase 3+ scope. */}
+            painting. Active artwork comes from Settings (useTheme().artworkId). */}
         <View
           style={[StyleSheet.absoluteFill, { backgroundColor: glass.scrim }]}
           pointerEvents="none"
