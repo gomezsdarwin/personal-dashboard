@@ -158,31 +158,6 @@ export const accentPalettes = {
   Berry: ['#f7b8d0', '#c9a6f2'] as [string, string],
 } as const;
 
-export type WallpaperName = 'Sunset' | 'Mint' | 'Lavender';
-
-/**
- * Wallpaper mesh stops. RN LinearGradient can't do CSS radial-gradient meshes natively,
- * so AppShell renders `linear` as the base gradient and layers the 4 `radial` colors as
- * soft corner washes (color -> transparent) to approximate HANDOFF's pastel mesh.
- */
-export const wallpaperMesh: Record<
-  WallpaperName,
-  { radial: [string, string, string, string]; linear: [string, string, string] }
-> = {
-  Sunset: {
-    radial: ['#ffd6e8', '#c2e9ff', '#d8c8ff', '#ffe0f0'],
-    linear: ['#ffe9f5', '#ece7ff', '#e0f3ff'],
-  },
-  Mint: {
-    radial: ['#cdeedd', '#bfe3ee', '#e4e0fb', '#d7f5e8'],
-    linear: ['#e3f7ee', '#e6f2fb', '#ece7fb'],
-  },
-  Lavender: {
-    radial: ['#e8f0ff', '#f3e6ff', '#ffe6f0', '#e6ecff'],
-    linear: ['#eef0ff', '#f5e9ff', '#ffeef5'],
-  },
-};
-
 export const tokens = {
   color,
   type,
@@ -193,7 +168,6 @@ export const tokens = {
   glass,
   accentDefault,
   accentPalettes,
-  wallpaperMesh,
 } as const;
 
 export default tokens;

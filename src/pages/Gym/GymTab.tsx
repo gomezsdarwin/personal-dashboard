@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppShell } from '../../components/AppShell';
-import { color, type } from '../../theme/tokens';
+import { HeaderBar } from '../../components/HeaderBar';
+import { type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import { SPLITS, todaySplit } from '../../data/workouts';
 import { LogTab } from './LogTab';
 import { StatsTab } from './StatsTab';
@@ -17,6 +19,7 @@ type GymSubTab = 'LOG' | 'STATS' | 'GRAPH';
 const GYM_TABS: GymSubTab[] = ['LOG', 'STATS', 'GRAPH'];
 
 export default function GymTab() {
+  const { palette } = useTheme();
   const [activeTab, setActiveTab] = useState<GymSubTab>('LOG');
 
   const splitId = todaySplit();
@@ -29,18 +32,32 @@ export default function GymTab() {
 
   return (
     <AppShell>
+      <HeaderBar />
+
       <View style={styles.header}>
-        <Text style={styles.title}>🏋️ Gym</Text>
-        <Text style={styles.subtitle}>{`${splitLabel} · ${dateLabel}`}</Text>
+        <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Gym</Text>
+        <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>{`${splitLabel} · ${dateLabel}`}</Text>
       </View>
 
-      <View style={styles.subNav}>
+      <View style={[styles.subNav, { borderBottomColor: palette.hairline }]}>
         {GYM_TABS.map((tab) => {
           const active = tab === activeTab;
           return (
             <Pressable key={tab} style={styles.subNavItem} onPress={() => setActiveTab(tab)}>
-              <Text style={[styles.subNavLabel, active && styles.subNavLabelActive]}>{tab}</Text>
-              <View style={[styles.subNavIndicator, active && styles.subNavIndicatorActive]} />
+              <Text
+                style={[
+                  styles.subNavLabel,
+                  { color: active ? palette.accentText : palette.text.tertiary },
+                ]}
+              >
+                {tab}
+              </Text>
+              <View
+                style={[
+                  styles.subNavIndicator,
+                  { backgroundColor: active ? palette.accentText : 'transparent' },
+                ]}
+              />
             </Pressable>
           );
         })}
@@ -66,11 +83,9 @@ const styles = StyleSheet.create({
     fontSize: type.screenTitle.fontSize,
     fontWeight: type.screenTitle.fontWeight,
     letterSpacing: type.screenTitle.letterSpacing,
-    color: color.text.primaryAlt,
   },
   subtitle: {
     fontSize: type.body.fontSize,
-    color: color.text.secondaryAlt,
     marginTop: 4,
   },
   subNav: {
@@ -80,7 +95,6 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     marginBottom: 18,
     borderBottomWidth: 1,
-    borderBottomColor: color.hairline,
   },
   subNavItem: {
     alignItems: 'center',
@@ -90,21 +104,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.6,
-    color: color.text.tertiary,
     textTransform: 'uppercase',
-  },
-  subNavLabelActive: {
-    color: color.accentText,
   },
   subNavIndicator: {
     marginTop: 6,
     height: 1.5,
     width: 18,
     borderRadius: 1,
-    backgroundColor: 'transparent',
-  },
-  subNavIndicatorActive: {
-    backgroundColor: color.accentText,
   },
   content: {
     flex: 1,

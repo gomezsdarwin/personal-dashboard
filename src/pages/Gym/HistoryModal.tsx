@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BlurView } from 'expo-blur';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
-import { color, radius, spacing, type } from '../../theme/tokens';
+import { radius, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
+import type { Palette } from '../../theme/palettes';
 import type { GymSessionRow, GymSet } from '../../lib/types';
 
 /**
@@ -103,6 +106,7 @@ export function HistoryModal({
   sessions: GymSessionRow[];
   onClose: () => void;
 }) {
+  const { palette, glass } = useTheme();
   const [range, setRange] = useState<string>('ALL');
 
   const history = useMemo(() => buildHistory(sessions, exercise.id), [sessions, exercise.id]);
@@ -139,141 +143,165 @@ export function HistoryModal({
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.handle} />
+        <Pressable style={styles.sheetWrap} onPress={(e) => e.stopPropagation()}>
+          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+          <View style={styles.sheet}>
+            <View style={[styles.handle, { backgroundColor: palette.track }]} />
 
-          <View style={styles.headerRow}>
-            <View style={styles.headerText}>
-              <Text style={styles.headerLabel}>history</Text>
-              <Text style={styles.headerName} numberOfLines={1}>
-                {exercise.name}
-              </Text>
+            <View style={styles.headerRow}>
+              <View style={styles.headerText}>
+                <Text style={[styles.headerLabel, { color: palette.text.tertiary }]}>history</Text>
+                <Text style={[styles.headerName, { color: palette.text.primary }]} numberOfLines={1}>
+                  {exercise.name}
+                </Text>
+              </View>
+              <Pressable style={[styles.closeBtn, { backgroundColor: 'rgba(120,110,150,0.12)' }]} onPress={onClose} hitSlop={8}>
+                <Text style={[styles.closeBtnText, { color: palette.text.secondary }]}>×</Text>
+              </Pressable>
             </View>
-            <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8}>
-              <Text style={styles.closeBtnText}>×</Text>
-            </Pressable>
-          </View>
 
-          {history.length === 0 ? (
-            <Text style={styles.emptyText}>No history logged for this exercise yet.</Text>
-          ) : (
-            <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
-              <View style={styles.rangeRow}>
-                {RANGES.map((r) => {
-                  const active = r.label === range;
-                  return (
-                    <Pressable
-                      key={r.label}
-                      style={[styles.rangePill, active && styles.rangePillActive]}
-                      onPress={() => setRange(r.label)}
-                    >
-                      <Text style={[styles.rangePillText, active && styles.rangePillTextActive]}>{r.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <Chart filtered={filtered} />
-
-              {hasRangeSummary && (
-                <View style={styles.summaryRow}>
-                  <View style={[styles.summaryPill, { backgroundColor: rangeWeightDelta >= 0 ? color.successBg : color.dangerBg }]}>
-                    <Text style={[styles.summaryPillText, { color: rangeWeightDelta >= 0 ? color.success : color.danger }]}>
-                      {`${rangeWeightDelta >= 0 ? '+' : ''}${rangeWeightDelta} lbs`}
-                    </Text>
-                  </View>
-                  {showRepsDelta && (
-                    <View style={[styles.summaryPill, { backgroundColor: rangeRepsDelta >= 0 ? color.successBg : color.dangerBg }]}>
-                      <Text style={[styles.summaryPillText, { color: rangeRepsDelta >= 0 ? color.success : color.danger }]}>
-                        {`${rangeRepsDelta >= 0 ? '+' : ''}${rangeRepsDelta.toFixed(1)} reps`}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={styles.summaryCaption}>{rangeDef.days == null ? 'all time' : `${range} range`}</Text>
-                </View>
-              )}
-
-              {last && (
-                <View style={styles.lastRow}>
-                  <View style={styles.lastRowLeft}>
-                    <Text style={styles.lastDate}>{fmtDate(last.date)}</Text>
-                    <View style={styles.lastPillRow}>
-                      {last.sets.map((s, i) => {
-                        const n = Number(s.reps);
-                        const valid = Number.isFinite(n) && n > 0;
-                        return (
-                          <View key={i} style={styles.lastPill}>
-                            <Text style={styles.lastPillText}>{valid ? n : '—'}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                  <Text style={styles.lastTotal}>{`${totalReps(last.sets)} reps`}</Text>
-                </View>
-              )}
-
-              <View style={styles.statsStrip}>
-                <StatTile label="SESSIONS" value={String(filtered.length)} />
-                <StatTile
-                  label="WEIGHT Δ"
-                  value={`${rangeWeightDelta >= 0 ? '+' : ''}${rangeWeightDelta}`}
-                  color={rangeWeightDelta > 0 ? color.success : rangeWeightDelta < 0 ? color.danger : color.text.secondary}
-                />
-                <StatTile
-                  label="REPS Δ"
-                  value={`${rangeRepsDelta >= 0 ? '+' : ''}${rangeRepsDelta.toFixed(1)}`}
-                  color={rangeRepsDelta > 0 ? color.success : rangeRepsDelta < 0 ? color.danger : color.text.secondary}
-                />
-              </View>
-
-              <View style={styles.table}>
-                <View style={styles.tableHeaderRow}>
-                  <Text style={[styles.tableHeaderText, styles.tableColDate]}>DATE</Text>
-                  <Text style={[styles.tableHeaderText, styles.tableColReps]}>REPS</Text>
-                  <Text style={[styles.tableHeaderText, styles.tableColWeight]}>WEIGHT</Text>
-                  <Text style={[styles.tableHeaderText, styles.tableColChange]}>CHANGE</Text>
-                </View>
-                {tableRows.map(({ entry, delta }, i) => {
-                  const isBest = entry.weight === bestWeight;
-                  const changeLabel =
-                    delta == null ? 'first' : delta === 0 ? '+0' : `${delta > 0 ? '+' : ''}${delta}`;
-                  const changeColor = delta == null ? color.text.tertiary : delta > 0 ? color.success : delta < 0 ? color.danger : color.text.tertiary;
-                  return (
-                    <View key={`${entry.date}-${i}`} style={[styles.tableRow, i > 0 && styles.tableRowDivider]}>
-                      <Text style={[styles.tableCellText, styles.tableColDate]} numberOfLines={1}>
-                        {fmtDate(entry.date)}
-                      </Text>
-                      <Text style={[styles.tableCellText, styles.tableColReps]}>{totalReps(entry.sets)}</Text>
-                      <Text
+            {history.length === 0 ? (
+              <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No history logged for this exercise yet.</Text>
+            ) : (
+              <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
+                <View style={styles.rangeRow}>
+                  {RANGES.map((r) => {
+                    const active = r.label === range;
+                    return (
+                      <Pressable
+                        key={r.label}
                         style={[
-                          styles.tableCellText,
-                          styles.tableColWeight,
-                          isBest && styles.tableCellBest,
+                          styles.rangePill,
+                          { backgroundColor: 'rgba(120,110,150,0.10)', borderColor: 'rgba(120,110,150,0.16)' },
+                          active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
                         ]}
+                        onPress={() => setRange(r.label)}
                       >
-                        {isBest ? `★ ${entry.weight}` : entry.weight}
-                      </Text>
-                      <Text style={[styles.tableCellText, styles.tableColChange, { color: changeColor }]}>
-                        {changeLabel}
+                        <Text style={[styles.rangePillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{r.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Chart filtered={filtered} palette={palette} />
+
+                {hasRangeSummary && (
+                  <View style={styles.summaryRow}>
+                    <View style={[styles.summaryPill, { backgroundColor: rangeWeightDelta >= 0 ? palette.successBg : palette.dangerBg }]}>
+                      <Text style={[styles.summaryPillText, { color: rangeWeightDelta >= 0 ? palette.success : palette.danger }]}>
+                        {`${rangeWeightDelta >= 0 ? '+' : ''}${rangeWeightDelta} lbs`}
                       </Text>
                     </View>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          )}
+                    {showRepsDelta && (
+                      <View style={[styles.summaryPill, { backgroundColor: rangeRepsDelta >= 0 ? palette.successBg : palette.dangerBg }]}>
+                        <Text style={[styles.summaryPillText, { color: rangeRepsDelta >= 0 ? palette.success : palette.danger }]}>
+                          {`${rangeRepsDelta >= 0 ? '+' : ''}${rangeRepsDelta.toFixed(1)} reps`}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={[styles.summaryCaption, { color: palette.text.tertiary }]}>{rangeDef.days == null ? 'all time' : `${range} range`}</Text>
+                  </View>
+                )}
+
+                {last && (
+                  <View style={styles.lastRow}>
+                    <View style={styles.lastRowLeft}>
+                      <Text style={[styles.lastDate, { color: palette.text.tertiary }]}>{fmtDate(last.date)}</Text>
+                      <View style={styles.lastPillRow}>
+                        {last.sets.map((s, i) => {
+                          const n = Number(s.reps);
+                          const valid = Number.isFinite(n) && n > 0;
+                          return (
+                            <View key={i} style={[styles.lastPill, { backgroundColor: palette.successBg }]}>
+                              <Text style={[styles.lastPillText, { color: palette.success }]}>{valid ? n : '—'}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                    <Text style={[styles.lastTotal, { color: palette.text.tertiary }]}>{`${totalReps(last.sets)} reps`}</Text>
+                  </View>
+                )}
+
+                <View style={styles.statsStrip}>
+                  <StatTile label="SESSIONS" value={String(filtered.length)} palette={palette} />
+                  <StatTile
+                    label="WEIGHT Δ"
+                    value={`${rangeWeightDelta >= 0 ? '+' : ''}${rangeWeightDelta}`}
+                    color={rangeWeightDelta > 0 ? palette.success : rangeWeightDelta < 0 ? palette.danger : palette.text.secondary}
+                    palette={palette}
+                  />
+                  <StatTile
+                    label="REPS Δ"
+                    value={`${rangeRepsDelta >= 0 ? '+' : ''}${rangeRepsDelta.toFixed(1)}`}
+                    color={rangeRepsDelta > 0 ? palette.success : rangeRepsDelta < 0 ? palette.danger : palette.text.secondary}
+                    palette={palette}
+                  />
+                </View>
+
+                <View style={[styles.table, { backgroundColor: 'rgba(120,110,150,0.05)' }]}>
+                  <View style={[styles.tableHeaderRow, { backgroundColor: 'rgba(120,110,150,0.08)' }]}>
+                    <Text style={[styles.tableHeaderText, styles.tableColDate, { color: palette.text.tertiary }]}>DATE</Text>
+                    <Text style={[styles.tableHeaderText, styles.tableColReps, { color: palette.text.tertiary }]}>REPS</Text>
+                    <Text style={[styles.tableHeaderText, styles.tableColWeight, { color: palette.text.tertiary }]}>WEIGHT</Text>
+                    <Text style={[styles.tableHeaderText, styles.tableColChange, { color: palette.text.tertiary }]}>CHANGE</Text>
+                  </View>
+                  {tableRows.map(({ entry, delta }, i) => {
+                    const isBest = entry.weight === bestWeight;
+                    const changeLabel =
+                      delta == null ? 'first' : delta === 0 ? '+0' : `${delta > 0 ? '+' : ''}${delta}`;
+                    const changeColor = delta == null ? palette.text.tertiary : delta > 0 ? palette.success : delta < 0 ? palette.danger : palette.text.tertiary;
+                    return (
+                      <View
+                        key={`${entry.date}-${i}`}
+                        style={[styles.tableRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
+                      >
+                        <Text style={[styles.tableCellText, styles.tableColDate, { color: palette.text.secondary }]} numberOfLines={1}>
+                          {fmtDate(entry.date)}
+                        </Text>
+                        <Text style={[styles.tableCellText, styles.tableColReps, { color: palette.text.secondary }]}>{totalReps(entry.sets)}</Text>
+                        <Text
+                          style={[
+                            styles.tableCellText,
+                            styles.tableColWeight,
+                            { color: palette.text.secondary },
+                            isBest && [styles.tableCellBest, { color: palette.warning }],
+                          ]}
+                        >
+                          {isBest ? `★ ${entry.weight}` : entry.weight}
+                        </Text>
+                        <Text style={[styles.tableCellText, styles.tableColChange, { color: changeColor }]}>
+                          {changeLabel}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )}
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
   );
 }
 
-function StatTile({ label, value, color: valueColor }: { label: string; value: string; color?: string }) {
+function StatTile({
+  label,
+  value,
+  color: valueColor,
+  palette,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  palette: Palette;
+}) {
   return (
-    <View style={styles.statTile}>
-      <Text style={styles.statTileLabel}>{label}</Text>
-      <Text style={[styles.statTileValue, valueColor ? { color: valueColor } : null]}>{value}</Text>
+    <View style={[styles.statTile, { backgroundColor: 'rgba(120,110,150,0.08)' }]}>
+      <Text style={[styles.statTileLabel, { color: palette.text.tertiary }]}>{label}</Text>
+      <Text style={[styles.statTileValue, { color: valueColor ?? palette.text.primaryAlt }]}>{value}</Text>
     </View>
   );
 }
@@ -298,7 +326,7 @@ function roundUpTo5(n: number): number {
   return Math.ceil(n / 5) * 5;
 }
 
-function Chart({ filtered }: { filtered: HistoryEntry[] }) {
+function Chart({ filtered, palette }: { filtered: HistoryEntry[]; palette: Palette }) {
   const [tip, setTip] = useState<number | null>(null);
 
   const plotW = CW - PAD.l - PAD.r;
@@ -307,7 +335,7 @@ function Chart({ filtered }: { filtered: HistoryEntry[] }) {
   if (filtered.length === 0) {
     return (
       <View style={[chartStyles.empty, { height: CH }]}>
-        <Text style={chartStyles.emptyText}>No data points in this range.</Text>
+        <Text style={[chartStyles.emptyText, { color: palette.text.tertiary }]}>No data points in this range.</Text>
       </View>
     );
   }
@@ -343,7 +371,7 @@ function Chart({ filtered }: { filtered: HistoryEntry[] }) {
   const firstW = filtered[0].weight;
   const lastW = filtered[filtered.length - 1].weight;
   const netUp = lastW >= firstW;
-  const weightColor = netUp ? color.success : color.danger;
+  const weightColor = netUp ? palette.success : palette.danger;
 
   // Right axis (reps) — only if >=1 session has valid avg reps; skip
   // sessions with no valid reps rather than interpolating/zeroing them.
@@ -378,7 +406,7 @@ function Chart({ filtered }: { filtered: HistoryEntry[] }) {
   return (
     <View style={{ width: CW, height: CH, marginBottom: spacing.rowGapMd }}>
       {/* Axis legend */}
-      <Text style={chartStyles.legendLbs}>LBS</Text>
+      <Text style={[chartStyles.legendLbs, { color: palette.text.faint }]}>LBS</Text>
       {hasReps && <Text style={chartStyles.legendReps}>REPS</Text>}
 
       <Svg width={CW} height={CH}>
@@ -416,7 +444,7 @@ function Chart({ filtered }: { filtered: HistoryEntry[] }) {
             y1={PAD.t}
             x2={active.x}
             y2={PAD.t + plotH}
-            stroke={color.text.tertiary}
+            stroke={palette.text.tertiary}
             strokeWidth={1}
             strokeDasharray="3,4"
           />
@@ -441,7 +469,7 @@ function Chart({ filtered }: { filtered: HistoryEntry[] }) {
 
       {/* Y tick labels (left axis) */}
       {ticks.map((t, i) => (
-        <Text key={i} style={[chartStyles.yLabel, { top: yAt(t) - 6 }]}>
+        <Text key={i} style={[chartStyles.yLabel, { top: yAt(t) - 6, color: palette.text.tertiary }]}>
           {Math.round(t)}
         </Text>
       ))}
@@ -450,7 +478,7 @@ function Chart({ filtered }: { filtered: HistoryEntry[] }) {
       {xLabelIndices.map((i) => (
         <Text
           key={i}
-          style={[chartStyles.xLabel, { left: Math.max(0, Math.min(CW - 44, xAt(i) - 22)) }]}
+          style={[chartStyles.xLabel, { left: Math.max(0, Math.min(CW - 44, xAt(i) - 22)), color: palette.text.tertiary }]}
           numberOfLines={1}
         >
           {fmtDate(filtered[i].date)}
@@ -487,7 +515,6 @@ const chartStyles = StyleSheet.create({
   },
   emptyText: {
     fontSize: type.body.fontSize,
-    color: color.text.tertiary,
     textAlign: 'center',
   },
   legendLbs: {
@@ -497,7 +524,6 @@ const chartStyles = StyleSheet.create({
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: color.text.faint,
   },
   legendReps: {
     position: 'absolute',
@@ -513,7 +539,6 @@ const chartStyles = StyleSheet.create({
     left: 0,
     width: PAD.l - 6,
     fontSize: 9,
-    color: color.text.tertiary,
     textAlign: 'right',
   },
   xLabel: {
@@ -521,7 +546,6 @@ const chartStyles = StyleSheet.create({
     bottom: 6,
     width: 44,
     fontSize: 9,
-    color: color.text.tertiary,
     textAlign: 'center',
   },
   tooltip: {
@@ -562,14 +586,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20,15,30,0.5)',
     justifyContent: 'flex-end',
   },
-  sheet: {
-    backgroundColor: '#fdfcff',
+  sheetWrap: {
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
+    overflow: 'hidden',
+    maxHeight: '88%',
+  },
+  sheet: {
     paddingHorizontal: spacing.screenSide,
     paddingTop: 12,
     paddingBottom: 40,
-    maxHeight: '88%',
   },
   scrollBody: {
     flexGrow: 0,
@@ -579,7 +605,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: color.track,
     marginBottom: 14,
   },
   headerRow: {
@@ -596,7 +621,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
-    color: color.text.tertiary,
     marginBottom: 2,
   },
   headerName: {
@@ -604,7 +628,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontStyle: 'italic',
     letterSpacing: -0.4,
-    color: color.text.primary,
   },
   closeBtn: {
     width: 28,
@@ -612,16 +635,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(120,110,150,0.12)',
   },
   closeBtnText: {
     fontSize: 18,
     lineHeight: 18,
-    color: color.text.secondary,
   },
   emptyText: {
     fontSize: type.body.fontSize,
-    color: color.text.tertiary,
     textAlign: 'center',
     paddingVertical: 24,
   },
@@ -634,22 +654,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 7,
     borderRadius: radius.chip,
-    backgroundColor: 'rgba(120,110,150,0.10)',
     borderWidth: 1,
-    borderColor: 'rgba(120,110,150,0.16)',
     alignItems: 'center',
-  },
-  rangePillActive: {
-    backgroundColor: color.accentText,
-    borderColor: color.accentText,
   },
   rangePillText: {
     fontSize: 11,
     fontWeight: '700',
-    color: color.text.secondary,
-  },
-  rangePillTextActive: {
-    color: '#ffffff',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -668,7 +678,6 @@ const styles = StyleSheet.create({
   },
   summaryCaption: {
     fontSize: 11,
-    color: color.text.tertiary,
     marginLeft: 'auto',
   },
   lastRow: {
@@ -682,7 +691,6 @@ const styles = StyleSheet.create({
   },
   lastDate: {
     fontSize: type.caption.fontSize,
-    color: color.text.tertiary,
     marginBottom: 4,
   },
   lastPillRow: {
@@ -694,17 +702,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: color.successBg,
     alignItems: 'center',
   },
   lastPillText: {
     fontSize: 12,
     fontWeight: '700',
-    color: color.success,
   },
   lastTotal: {
     fontSize: type.caption.fontSize,
-    color: color.text.tertiary,
   },
   statsStrip: {
     flexDirection: 'row',
@@ -715,37 +720,31 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: radius.input,
-    backgroundColor: 'rgba(120,110,150,0.08)',
     alignItems: 'center',
   },
   statTileLabel: {
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.8,
-    color: color.text.tertiary,
     marginBottom: 4,
   },
   statTileValue: {
     fontSize: 17,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   table: {
     borderRadius: radius.input,
     overflow: 'hidden',
-    backgroundColor: 'rgba(120,110,150,0.05)',
   },
   tableHeaderRow: {
     flexDirection: 'row',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(120,110,150,0.08)',
   },
   tableHeaderText: {
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 0.6,
-    color: color.text.tertiary,
   },
   tableRow: {
     flexDirection: 'row',
@@ -753,16 +752,10 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 12,
   },
-  tableRowDivider: {
-    borderTopWidth: 1,
-    borderTopColor: color.hairline,
-  },
   tableCellText: {
     fontSize: 12,
-    color: color.text.secondary,
   },
   tableCellBest: {
-    color: color.warning,
     fontWeight: '700',
   },
   tableColDate: {

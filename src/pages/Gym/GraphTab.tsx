@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
 import { GlassCard } from '../../components/GlassCard';
-import { color, radius, spacing, type } from '../../theme/tokens';
+import { radius, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import { useRepo } from '../../hooks/useRepo';
 import { SPLITS } from '../../data/workouts';
 import type { GymSessionRow } from '../../lib/types';
@@ -90,6 +91,7 @@ function buildHighlights(exerciseData: Record<string, ExercisePoint[]>, today: s
 // ---------------------------------------------------------------------------
 
 export function GraphTab() {
+  const { palette } = useTheme();
   const { rows: sessions } = useRepo('gym_sessions');
   const [range, setRange] = useState<string>('1M');
   const [selected, setSelected] = useState<string | null>(null);
@@ -114,7 +116,7 @@ export function GraphTab() {
   if (exerciseNames.length === 0) {
     return (
       <View style={styles.emptyWrap}>
-        <Text style={styles.emptyText}>No exercise history yet — log a session to see progress graphs.</Text>
+        <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No exercise history yet — log a session to see progress graphs.</Text>
       </View>
     );
   }
@@ -123,16 +125,19 @@ export function GraphTab() {
     <View>
       {highlights.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notable increases — last 30 days</Text>
+          <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Notable increases — last 30 days</Text>
           {highlights.map((h) => (
-            <View key={h.name} style={styles.highlightRow}>
+            <View
+              key={h.name}
+              style={[styles.highlightRow, { backgroundColor: palette.successBg, borderColor: palette.successBorder }]}
+            >
               <View style={styles.highlightInfo}>
-                <Text style={styles.highlightName} numberOfLines={1}>
+                <Text style={[styles.highlightName, { color: palette.text.primaryAlt }]} numberOfLines={1}>
                   {h.name}
                 </Text>
-                <Text style={styles.highlightRange}>{`${h.from} → ${h.to} lbs`}</Text>
+                <Text style={[styles.highlightRange, { color: palette.text.secondary }]}>{`${h.from} → ${h.to} lbs`}</Text>
               </View>
-              <View style={styles.highlightBadge}>
+              <View style={[styles.highlightBadge, { backgroundColor: palette.success }]}>
                 <Text style={styles.highlightBadgeText}>{`+${h.delta} lbs`}</Text>
               </View>
             </View>
@@ -151,10 +156,17 @@ export function GraphTab() {
           return (
             <Pressable
               key={name}
-              style={[styles.selectorPill, active && styles.selectorPillActive]}
+              style={[
+                styles.selectorPill,
+                { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
+                active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+              ]}
               onPress={() => setSelected(name)}
             >
-              <Text style={[styles.selectorPillText, active && styles.selectorPillTextActive]} numberOfLines={1}>
+              <Text
+                style={[styles.selectorPillText, { color: active ? '#ffffff' : palette.text.secondary }]}
+                numberOfLines={1}
+              >
                 {name}
               </Text>
             </Pressable>
@@ -164,7 +176,7 @@ export function GraphTab() {
 
       {activeExercise && (
         <View style={styles.chartSection}>
-          <Text style={styles.chartTitle}>{activeExercise}</Text>
+          <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]}>{activeExercise}</Text>
 
           <View style={styles.rangeRow}>
             {RANGES.map((r) => {
@@ -172,10 +184,14 @@ export function GraphTab() {
               return (
                 <Pressable
                   key={r.label}
-                  style={[styles.rangePill, active && styles.rangePillActive]}
+                  style={[
+                    styles.rangePill,
+                    { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
+                    active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+                  ]}
                   onPress={() => setRange(r.label)}
                 >
-                  <Text style={[styles.rangePillText, active && styles.rangePillTextActive]}>{r.label}</Text>
+                  <Text style={[styles.rangePillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{r.label}</Text>
                 </Pressable>
               );
             })}
@@ -197,11 +213,12 @@ export function GraphTab() {
 // ---------------------------------------------------------------------------
 
 function SessionLog({ data }: { data: ExercisePoint[] }) {
+  const { palette } = useTheme();
   const reversed = [...data].reverse();
   if (reversed.length === 0) {
     return (
       <GlassCard contentStyle={styles.logCardContent}>
-        <Text style={styles.emptyLogText}>No sessions in this range.</Text>
+        <Text style={[styles.emptyLogText, { color: palette.text.tertiary }]}>No sessions in this range.</Text>
       </GlassCard>
     );
   }
@@ -214,13 +231,16 @@ function SessionLog({ data }: { data: ExercisePoint[] }) {
         const bumped = prev != null && entry.weight > prev.weight;
         const splitLabel = SPLITS.find((s) => s.id === entry.split)?.label ?? entry.split;
         return (
-          <View key={`${entry.date}-${i}`} style={[styles.logRow, i > 0 && styles.logRowDivider]}>
-            <Text style={styles.logText} numberOfLines={1}>
+          <View
+            key={`${entry.date}-${i}`}
+            style={[styles.logRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
+          >
+            <Text style={[styles.logText, { color: palette.text.secondary }]} numberOfLines={1}>
               {`${fmtDate(entry.date)} · ${splitLabel} · ${entry.weight} lbs · ${entry.reps}`}
             </Text>
             {bumped && (
-              <View style={styles.bumpBadge}>
-                <Text style={styles.bumpBadgeText}>↑</Text>
+              <View style={[styles.bumpBadge, { backgroundColor: palette.successBg }]}>
+                <Text style={[styles.bumpBadgeText, { color: palette.success }]}>↑</Text>
               </View>
             )}
           </View>
@@ -249,6 +269,7 @@ const CH = 190;
 const PAD = { t: 20, r: 16, b: 32, l: 44 };
 
 function LineChart({ data }: { data: ExercisePoint[] }) {
+  const { palette } = useTheme();
   const [tip, setTip] = useState<number | null>(null);
 
   const plotW = CW - PAD.l - PAD.r;
@@ -257,7 +278,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
   if (data.length === 0) {
     return (
       <View style={[styles.chartEmpty, { height: CH }]}>
-        <Text style={styles.emptyLogText}>No data points in this range.</Text>
+        <Text style={[styles.emptyLogText, { color: palette.text.tertiary }]}>No data points in this range.</Text>
       </View>
     );
   }
@@ -288,7 +309,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
   const first = data[0].weight;
   const last = data[data.length - 1].weight;
   const netUp = last >= first;
-  const accent = netUp ? color.success : color.danger;
+  const accentColor = netUp ? palette.success : palette.danger;
 
   // 4 evenly-spaced Y gridlines with rounded labels.
   const yTicks = [0, 1, 2, 3].map((i) => yMin + (i / 3) * (yMax - yMin));
@@ -316,9 +337,9 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
     <View>
       {showDeltaHeader && (
         <View style={styles.deltaHeader}>
-          <Text style={styles.deltaLast}>{`${last} lbs`}</Text>
-          <View style={[styles.deltaBadge, { backgroundColor: netUp ? color.successBg : color.dangerBg }]}>
-            <Text style={[styles.deltaBadgeText, { color: accent }]}>
+          <Text style={[styles.deltaLast, { color: palette.text.primaryAlt }]}>{`${last} lbs`}</Text>
+          <View style={[styles.deltaBadge, { backgroundColor: netUp ? palette.successBg : palette.dangerBg }]}>
+            <Text style={[styles.deltaBadgeText, { color: accentColor }]}>
               {`${delta >= 0 ? '+' : ''}${delta} lbs (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`}
             </Text>
           </View>
@@ -329,8 +350,8 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
         <Svg width={CW} height={CH}>
           <Defs>
             <LinearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={accent} stopOpacity={0.28} />
-              <Stop offset="1" stopColor={accent} stopOpacity={0} />
+              <Stop offset="0" stopColor={accentColor} stopOpacity={0.28} />
+              <Stop offset="1" stopColor={accentColor} stopOpacity={0} />
             </LinearGradient>
           </Defs>
 
@@ -352,7 +373,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
 
           {/* Area fill + line */}
           {areaPath !== '' && <Path d={areaPath} fill="url(#areaFill)" stroke="none" />}
-          <Path d={linePath} fill="none" stroke={accent} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+          <Path d={linePath} fill="none" stroke={accentColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
 
           {/* Crosshair at active point */}
           {active != null && (
@@ -361,7 +382,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
               y1={PAD.t}
               x2={active.x}
               y2={PAD.t + plotH}
-              stroke={color.text.tertiary}
+              stroke={palette.text.tertiary}
               strokeWidth={1}
               strokeDasharray="3,4"
             />
@@ -372,7 +393,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
             const visible = showDotsAlways || p.i === activeIdx;
             if (!visible) return null;
             return (
-              <Circle key={p.i} cx={p.x} cy={p.y} r={p.i === activeIdx ? 4.5 : 3.5} fill={accent} />
+              <Circle key={p.i} cx={p.x} cy={p.y} r={p.i === activeIdx ? 4.5 : 3.5} fill={accentColor} />
             );
           })}
 
@@ -391,7 +412,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
 
         {/* Y tick labels — overlaid RN Text for reliable font rendering */}
         {yTicks.map((t, i) => (
-          <Text key={i} style={[styles.yLabel, { top: yAt(t) - 6 }]}>
+          <Text key={i} style={[styles.yLabel, { top: yAt(t) - 6, color: palette.text.tertiary }]}>
             {Math.round(t)}
           </Text>
         ))}
@@ -400,7 +421,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
         {xLabelIndices.map((i) => (
           <Text
             key={i}
-            style={[styles.xLabel, { left: Math.max(0, Math.min(CW - 44, xAt(i) - 22)) }]}
+            style={[styles.xLabel, { left: Math.max(0, Math.min(CW - 44, xAt(i) - 22)), color: palette.text.tertiary }]}
             numberOfLines={1}
           >
             {fmtDate(data[i].date)}
@@ -438,7 +459,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: type.body.fontSize,
-    color: color.text.tertiary,
     textAlign: 'center',
     paddingHorizontal: 24,
   },
@@ -450,7 +470,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
-    color: color.text.tertiary,
     marginBottom: spacing.rowGapSm,
   },
   highlightRow: {
@@ -460,9 +479,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: radius.input,
-    backgroundColor: color.successBg,
     borderWidth: 1,
-    borderColor: color.successBorder,
     marginBottom: 8,
   },
   highlightInfo: {
@@ -472,18 +489,15 @@ const styles = StyleSheet.create({
   highlightName: {
     fontSize: type.bodyMedium.fontSize,
     fontWeight: '600',
-    color: color.text.primaryAlt,
   },
   highlightRange: {
     fontSize: type.caption.fontSize,
-    color: color.text.secondary,
     marginTop: 2,
   },
   highlightBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 9,
-    backgroundColor: color.success,
   },
   highlightBadgeText: {
     fontSize: type.caption.fontSize,
@@ -501,22 +515,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: radius.chip,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
     maxWidth: 180,
-  },
-  selectorPillActive: {
-    backgroundColor: color.accentText,
-    borderColor: color.accentText,
   },
   selectorPillText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
-    color: color.text.secondary,
-  },
-  selectorPillTextActive: {
-    color: '#ffffff',
   },
   chartSection: {
     marginBottom: spacing.rowGapLg,
@@ -526,7 +530,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontStyle: 'italic',
     letterSpacing: -0.3,
-    color: color.text.primaryAlt,
     marginBottom: spacing.rowGapSm,
   },
   rangeRow: {
@@ -538,21 +541,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.chip,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  rangePillActive: {
-    backgroundColor: color.accentText,
-    borderColor: color.accentText,
   },
   rangePillText: {
     fontSize: type.caption.fontSize,
     fontWeight: '700',
-    color: color.text.secondary,
-  },
-  rangePillTextActive: {
-    color: '#ffffff',
   },
   chartCard: {
     marginBottom: spacing.rowGapMd,
@@ -573,7 +566,6 @@ const styles = StyleSheet.create({
   deltaLast: {
     fontSize: 22,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   deltaBadge: {
     paddingHorizontal: 8,
@@ -589,7 +581,6 @@ const styles = StyleSheet.create({
     left: 0,
     width: PAD.l - 6,
     fontSize: 9,
-    color: color.text.tertiary,
     textAlign: 'right',
   },
   xLabel: {
@@ -597,7 +588,6 @@ const styles = StyleSheet.create({
     bottom: 6,
     width: 44,
     fontSize: 9,
-    color: color.text.tertiary,
     textAlign: 'center',
   },
   tooltip: {
@@ -628,14 +618,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
-  logRowDivider: {
-    borderTopWidth: 1,
-    borderTopColor: color.hairline,
-  },
   logText: {
     flex: 1,
     fontSize: type.meta.fontSize,
-    color: color.text.secondary,
   },
   bumpBadge: {
     marginLeft: 8,
@@ -644,16 +629,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: color.successBg,
   },
   bumpBadgeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: color.success,
   },
   emptyLogText: {
     fontSize: type.body.fontSize,
-    color: color.text.tertiary,
     textAlign: 'center',
     paddingVertical: 16,
   },

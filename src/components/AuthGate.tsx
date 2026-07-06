@@ -12,9 +12,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { GlassCard } from './GlassCard';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { accentDefault } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
   children: React.ReactNode;
+};
+
+/** Backdrop gradient stops behind the sign-in card, theme-aware since this screen
+ * renders before/without the painted AppShell background. */
+const BACKDROP = {
+  light: ['#ffe9f5', '#ece7ff', '#e0f3ff'] as [string, string, string],
+  dark: ['#0d0c16', '#131020', '#0c1522'] as [string, string, string],
 };
 
 /**
@@ -24,11 +32,12 @@ type Props = {
  * local AsyncStorage-only mode (no Supabase env vars set).
  */
 export function AuthGate({ children }: Props) {
+  const { palette, glass, mode } = useTheme();
   const [session, setSession] = useState<Session | null>(null);
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
+  const [mode2, setMode2] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -67,7 +76,7 @@ export function AuthGate({ children }: Props) {
   if (checkingSession) {
     return (
       <View style={styles.centerFill}>
-        <ActivityIndicator color="#7a6bcf" />
+        <ActivityIndicator color={palette.accentText} />
       </View>
     );
   }
@@ -85,7 +94,7 @@ export function AuthGate({ children }: Props) {
       return;
     }
     setSubmitting(true);
-    if (mode === 'sign-in') {
+    if (mode2 === 'sign-in') {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -104,7 +113,7 @@ export function AuthGate({ children }: Props) {
         // Email confirmation required — no session yet. Tell the user instead of
         // leaving them on a silent form.
         setNotice('Check your email to confirm your account, then sign in.');
-        setMode('sign-in');
+        setMode2('sign-in');
       }
     }
   };
@@ -112,38 +121,44 @@ export function AuthGate({ children }: Props) {
   return (
     <View style={styles.root}>
       <LinearGradient
-        colors={['#ffe9f5', '#ece7ff', '#e0f3ff']}
+        colors={BACKDROP[mode]}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.centerFill}>
         <GlassCard style={styles.card}>
-          <Text style={styles.title}>Personal Dashboard</Text>
-          <Text style={styles.subtitle}>
-            {mode === 'sign-in' ? 'Sign in to continue' : 'Create an account'}
+          <Text style={[styles.title, { color: palette.text.primary }]}>Personal Dashboard</Text>
+          <Text style={[styles.subtitle, { color: palette.text.secondary }]}>
+            {mode2 === 'sign-in' ? 'Sign in to continue' : 'Create an account'}
           </Text>
 
           <TextInput
             value={email}
             onChangeText={setEmail}
             placeholder="Email"
-            placeholderTextColor="#8a84a0"
+            placeholderTextColor={palette.text.quaternary}
             autoCapitalize="none"
             keyboardType="email-address"
-            style={styles.input}
+            style={[
+              styles.input,
+              { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary },
+            ]}
           />
           <TextInput
             value={password}
             onChangeText={setPassword}
             placeholder="Password"
-            placeholderTextColor="#8a84a0"
+            placeholderTextColor={palette.text.quaternary}
             secureTextEntry
-            style={styles.input}
+            style={[
+              styles.input,
+              { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary },
+            ]}
           />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+          {error ? <Text style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
+          {notice ? <Text style={[styles.notice, { color: palette.warning }]}>{notice}</Text> : null}
 
           <Pressable onPress={onSubmit} disabled={submitting} style={styles.submitWrapper}>
             <LinearGradient
@@ -156,15 +171,15 @@ export function AuthGate({ children }: Props) {
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.submitText}>
-                  {mode === 'sign-in' ? 'Sign In' : 'Sign Up'}
+                  {mode2 === 'sign-in' ? 'Sign In' : 'Sign Up'}
                 </Text>
               )}
             </LinearGradient>
           </Pressable>
 
-          <Pressable onPress={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}>
-            <Text style={styles.switchMode}>
-              {mode === 'sign-in'
+          <Pressable onPress={() => setMode2(mode2 === 'sign-in' ? 'sign-up' : 'sign-in')}>
+            <Text style={[styles.switchMode, { color: palette.text.secondary }]}>
+              {mode2 === 'sign-in'
                 ? "Don't have an account? Sign up"
                 : 'Already have an account? Sign in'}
             </Text>
@@ -192,34 +207,27 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#201c2c',
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
-    color: '#5a5470',
     textAlign: 'center',
     marginTop: 4,
     marginBottom: 18,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.35)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#201c2c',
     marginBottom: 10,
   },
   error: {
-    color: 'rgba(230,40,60,0.95)',
     fontSize: 13,
     marginBottom: 8,
   },
   notice: {
-    color: '#5a4200',
     fontSize: 13,
     marginBottom: 8,
   },
@@ -240,7 +248,6 @@ const styles = StyleSheet.create({
   switchMode: {
     marginTop: 14,
     fontSize: 13,
-    color: '#5a5470',
     textAlign: 'center',
   },
 });

@@ -9,22 +9,21 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { spacing, type WallpaperName } from '../theme/tokens';
+import { spacing } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 import { artworks, defaultArtwork } from '../data/artworks';
 
 type Props = {
   children?: React.ReactNode;
-  wallpaper?: WallpaperName;
   contentStyle?: StyleProp<ViewStyle>;
 };
 
 /**
- * Per-screen scroll wrapper: pastel wallpaper mesh background, top safe-area padding,
+ * Per-screen scroll wrapper: painted-artwork background, top safe-area padding,
  * ~118px bottom padding to clear the floating tab bar, hidden scroll indicator, and a
  * 0.4s fade + rise-in animation on mount (mirrors Phone.dc.html's `floatIn` keyframes).
  */
-export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props) {
+export function AppShell({ children, contentStyle }: Props) {
   const insets = useSafeAreaInsets();
   const { glass, artworkId } = useTheme();
   const activeArtwork = useMemo(

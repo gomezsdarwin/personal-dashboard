@@ -3,7 +3,9 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
-import { color, radius, spacing, type } from '../../theme/tokens';
+import { HeaderBar } from '../../components/HeaderBar';
+import { radius, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import { accent } from '../../theme/accent';
 import { useRepo } from '../../hooks/useRepo';
 import type { NewRow, PeptideDoseRow, PeptideInventoryRow } from '../../lib/types';
@@ -46,18 +48,21 @@ const seedInventory: NewRow<PeptideInventoryRow>[] = [
  * card per compound with a recon note + doses-remaining progress bar.
  */
 export default function PeptidesScreen() {
+  const { palette } = useTheme();
   const doses = useRepo('peptide_doses', seedDoses);
   const inventory = useRepo('peptide_inventory', seedInventory);
 
   return (
     <AppShell>
+      <HeaderBar />
+
       <View style={styles.header}>
-        <Text style={styles.title}>💊 Peptides</Text>
-        <Text style={styles.subtitle}>Schedule & inventory</Text>
+        <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Peptides</Text>
+        <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Schedule & inventory</Text>
       </View>
 
       <GlassCard style={styles.sectionGap}>
-        <Text style={styles.cardTitle}>Today&apos;s schedule</Text>
+        <Text style={[styles.cardTitle, { color: palette.text.primary }]}>Today&apos;s schedule</Text>
         <View style={styles.doseList}>
           {doses.rows.map((dose) => (
             <DoseRow
@@ -68,20 +73,20 @@ export default function PeptidesScreen() {
             />
           ))}
           {doses.rows.length === 0 && !doses.loading ? (
-            <Text style={styles.emptyText}>No doses scheduled.</Text>
+            <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No doses scheduled.</Text>
           ) : null}
         </View>
         <AddDoseForm onAdd={(row) => doses.insert(row)} />
       </GlassCard>
 
-      <Text style={styles.sectionLabel}>Inventory</Text>
+      <Text style={[styles.sectionLabel, { color: palette.text.primary }]}>Inventory</Text>
       <View style={styles.inventoryList}>
         {inventory.rows.map((item) => (
           <InventoryCard key={item.id} item={item} onRemove={() => inventory.remove(item.id)} />
         ))}
         {inventory.rows.length === 0 && !inventory.loading ? (
           <GlassCard>
-            <Text style={styles.emptyText}>No compounds tracked.</Text>
+            <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No compounds tracked.</Text>
           </GlassCard>
         ) : null}
       </View>
@@ -101,6 +106,7 @@ function DoseRow({
   onToggle: () => void;
   onRemove: () => void;
 }) {
+  const { palette, glass } = useTheme();
   const gradient = accent.diagonal();
   return (
     <View style={styles.doseRow}>
@@ -110,22 +116,36 @@ function DoseRow({
             <Text style={styles.checkboxMark}>✓</Text>
           </LinearGradient>
         ) : (
-          <View style={[styles.checkbox, styles.checkboxEmpty]} />
+          <View
+            style={[
+              styles.checkbox,
+              { backgroundColor: glass.fill, borderColor: glass.borderElevated },
+            ]}
+          />
         )}
       </Pressable>
       <View style={styles.doseInfo}>
-        <Text style={[styles.doseName, dose.taken && styles.doseNameTaken]}>{dose.name}</Text>
-        <Text style={styles.doseAmount}>{dose.amount}</Text>
+        <Text
+          style={[
+            styles.doseName,
+            { color: palette.text.primary },
+            dose.taken && { textDecorationLine: 'line-through', color: palette.text.dimmed },
+          ]}
+        >
+          {dose.name}
+        </Text>
+        <Text style={[styles.doseAmount, { color: palette.text.tertiary }]}>{dose.amount}</Text>
       </View>
-      <Text style={styles.doseTime}>{dose.time_label}</Text>
+      <Text style={[styles.doseTime, { color: palette.text.quaternary }]}>{dose.time_label}</Text>
       <Pressable onPress={onRemove} hitSlop={8} style={styles.removeBtn}>
-        <Text style={styles.removeGlyph}>×</Text>
+        <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
       </Pressable>
     </View>
   );
 }
 
 function AddDoseForm({ onAdd }: { onAdd: (row: NewRow<PeptideDoseRow>) => void }) {
+  const { palette, glass } = useTheme();
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [timeLabel, setTimeLabel] = useState('');
@@ -145,28 +165,30 @@ function AddDoseForm({ onAdd }: { onAdd: (row: NewRow<PeptideDoseRow>) => void }
     setTimeLabel('');
   };
 
+  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
+
   return (
     <View style={styles.addRow}>
       <TextInput
-        style={[styles.input, styles.inputName]}
+        style={[styles.input, styles.inputName, inputStyle]}
         placeholder="Name"
-        placeholderTextColor={color.text.faint}
+        placeholderTextColor={palette.text.faint}
         value={name}
         onChangeText={setName}
         onSubmitEditing={submit}
       />
       <TextInput
-        style={[styles.input, styles.inputAmount]}
+        style={[styles.input, styles.inputAmount, inputStyle]}
         placeholder="Amount · route"
-        placeholderTextColor={color.text.faint}
+        placeholderTextColor={palette.text.faint}
         value={amount}
         onChangeText={setAmount}
         onSubmitEditing={submit}
       />
       <TextInput
-        style={[styles.input, styles.inputTime]}
+        style={[styles.input, styles.inputTime, inputStyle]}
         placeholder="Time"
-        placeholderTextColor={color.text.faint}
+        placeholderTextColor={palette.text.faint}
         value={timeLabel}
         onChangeText={setTimeLabel}
         onSubmitEditing={submit}
@@ -186,6 +208,7 @@ function AddDoseForm({ onAdd }: { onAdd: (row: NewRow<PeptideDoseRow>) => void }
 }
 
 function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove: () => void }) {
+  const { palette } = useTheme();
   const pct = useMemo(() => {
     if (item.doses_total <= 0) return 0;
     return Math.max(0, Math.min(100, (item.doses_left / item.doses_total) * 100));
@@ -195,11 +218,11 @@ function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove
   return (
     <GlassCard radius={radius.inventoryCard} style={styles.inventoryCardGap} contentStyle={styles.inventoryContent}>
       <View style={styles.inventoryHeaderRow}>
-        <Text style={styles.inventoryName}>{item.name}</Text>
-        <Text style={styles.inventoryVials}>{item.vials} vials on hand</Text>
+        <Text style={[styles.inventoryName, { color: palette.text.primary }]}>{item.name}</Text>
+        <Text style={[styles.inventoryVials, { color: palette.text.tertiary }]}>{item.vials} vials on hand</Text>
       </View>
-      <Text style={styles.inventoryRecon}>{item.recon}</Text>
-      <View style={styles.progressTrack}>
+      <Text style={[styles.inventoryRecon, { color: palette.text.quaternary }]}>{item.recon}</Text>
+      <View style={[styles.progressTrack, { backgroundColor: palette.track }]}>
         <LinearGradient
           colors={gradient.colors}
           start={gradient.start}
@@ -208,9 +231,9 @@ function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove
         />
       </View>
       <View style={styles.inventoryFooterRow}>
-        <Text style={styles.inventoryCaption}>{item.doses_left} doses remaining</Text>
+        <Text style={[styles.inventoryCaption, { color: palette.text.tertiary }]}>{item.doses_left} doses remaining</Text>
         <Pressable onPress={onRemove} hitSlop={8} style={styles.removeBtn}>
-          <Text style={styles.removeGlyph}>×</Text>
+          <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
         </Pressable>
       </View>
     </GlassCard>
@@ -218,6 +241,7 @@ function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove
 }
 
 function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>) => void }) {
+  const { palette, glass } = useTheme();
   const [name, setName] = useState('');
   const [vials, setVials] = useState('');
   const [recon, setRecon] = useState('');
@@ -244,46 +268,48 @@ function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>)
     setDosesTotal('');
   };
 
+  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
+
   return (
     <View style={styles.addCompoundForm}>
-      <Text style={styles.addCompoundLabel}>Add compound</Text>
+      <Text style={[styles.addCompoundLabel, { color: palette.text.primary }]}>Add compound</Text>
       <View style={styles.addRow}>
         <TextInput
-          style={[styles.input, styles.inputName]}
+          style={[styles.input, styles.inputName, inputStyle]}
           placeholder="Name"
-          placeholderTextColor={color.text.faint}
+          placeholderTextColor={palette.text.faint}
           value={name}
           onChangeText={setName}
         />
         <TextInput
-          style={[styles.input, styles.inputVials]}
+          style={[styles.input, styles.inputVials, inputStyle]}
           placeholder="Vials"
-          placeholderTextColor={color.text.faint}
+          placeholderTextColor={palette.text.faint}
           value={vials}
           onChangeText={setVials}
           keyboardType="number-pad"
         />
       </View>
       <TextInput
-        style={[styles.input, styles.inputRecon]}
+        style={[styles.input, styles.inputRecon, inputStyle]}
         placeholder="Recon recipe (e.g. 5 mg vial · 2 mL BAC → 250 mcg = 0.10 mL)"
-        placeholderTextColor={color.text.faint}
+        placeholderTextColor={palette.text.faint}
         value={recon}
         onChangeText={setRecon}
       />
       <View style={styles.addRow}>
         <TextInput
-          style={[styles.input, styles.inputVials]}
+          style={[styles.input, styles.inputVials, inputStyle]}
           placeholder="Doses left"
-          placeholderTextColor={color.text.faint}
+          placeholderTextColor={palette.text.faint}
           value={dosesLeft}
           onChangeText={setDosesLeft}
           keyboardType="number-pad"
         />
         <TextInput
-          style={[styles.input, styles.inputVials]}
+          style={[styles.input, styles.inputVials, inputStyle]}
           placeholder="Doses total"
-          placeholderTextColor={color.text.faint}
+          placeholderTextColor={palette.text.faint}
           value={dosesTotal}
           onChangeText={setDosesTotal}
           keyboardType="number-pad"
@@ -313,11 +339,9 @@ const styles = StyleSheet.create({
     fontSize: type.screenTitle.fontSize,
     fontWeight: type.screenTitle.fontWeight,
     letterSpacing: type.screenTitle.letterSpacing,
-    color: color.text.primaryAlt,
   },
   subtitle: {
     fontSize: type.body.fontSize,
-    color: color.text.secondaryAlt,
     marginTop: 4,
   },
   sectionGap: {
@@ -326,7 +350,6 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: type.cardTitle.fontWeight,
-    color: color.text.primary,
     marginBottom: spacing.rowGapSm,
   },
   doseList: {
@@ -334,7 +357,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: type.meta.fontSize,
-    color: color.text.tertiary,
     paddingVertical: 8,
   },
   doseRow: {
@@ -345,17 +367,16 @@ const styles = StyleSheet.create({
   checkboxWrap: {
     flexShrink: 0,
   },
+  // Rounded-square (radius 7 on a 24px box), matching Home's To-Do checkboxes
+  // and the habit-tracker's cells — previously this used radius.checkbox (12,
+  // fully round), which no longer matches the app's toggle-shape language.
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: radius.checkbox,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  checkboxEmpty: {
-    backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1.5,
-    borderColor: 'rgba(120,110,150,0.35)',
   },
   checkboxMark: {
     color: '#ffffff',
@@ -368,28 +389,20 @@ const styles = StyleSheet.create({
   doseName: {
     fontSize: type.itemTitle.fontSize,
     fontWeight: type.itemTitle.fontWeight,
-    color: color.text.primary,
-  },
-  doseNameTaken: {
-    textDecorationLine: 'line-through',
-    color: color.text.dimmed,
   },
   doseAmount: {
     fontSize: type.meta.fontSize,
-    color: color.text.tertiary,
     marginTop: 1,
   },
   doseTime: {
     fontSize: 14,
     fontWeight: '600',
-    color: color.text.quaternary,
   },
   removeBtn: {
     paddingHorizontal: 4,
   },
   removeGlyph: {
     fontSize: 18,
-    color: color.text.faint,
   },
   addRow: {
     flexDirection: 'row',
@@ -401,11 +414,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: radius.input,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
     fontSize: 14,
-    color: color.text.primary,
   },
   inputName: {
     flex: 1.2,
@@ -440,7 +450,6 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 15,
     fontWeight: '700',
-    color: color.text.primary,
     marginBottom: spacing.rowGapSm,
     marginTop: 4,
   },
@@ -461,22 +470,18 @@ const styles = StyleSheet.create({
   inventoryName: {
     fontSize: 17,
     fontWeight: '700',
-    color: color.text.primary,
   },
   inventoryVials: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: type.metaSemibold.fontWeight,
-    color: color.text.tertiary,
   },
   inventoryRecon: {
     fontSize: type.meta.fontSize,
-    color: color.text.quaternary,
     marginTop: 6,
   },
   progressTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: color.track,
     marginTop: 12,
     overflow: 'hidden',
   },
@@ -493,7 +498,6 @@ const styles = StyleSheet.create({
   inventoryCaption: {
     fontSize: type.caption.fontSize,
     fontWeight: type.caption.fontWeight,
-    color: color.text.tertiary,
   },
   addCompoundForm: {
     marginTop: 0,
@@ -501,6 +505,5 @@ const styles = StyleSheet.create({
   addCompoundLabel: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: type.cardTitle.fontWeight,
-    color: color.text.primary,
   },
 });
