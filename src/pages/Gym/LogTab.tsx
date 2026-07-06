@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { GlassCard } from '../../components/GlassCard';
-import { color, radius, spacing, type } from '../../theme/tokens';
+import { radius, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import { useRepo } from '../../hooks/useRepo';
 import { SplitEditor } from './SplitEditor';
 import { HistoryModal } from './HistoryModal';
@@ -345,6 +347,8 @@ export function LogTab() {
 
   // --- render ------------------------------------------------------------
 
+  const { palette } = useTheme();
+
   return (
     <View>
       <SplitPicker
@@ -355,7 +359,7 @@ export function LogTab() {
 
       {!selectedSplit ? (
         <GlassCard style={styles.restCard}>
-          <Text style={styles.restText}>Rest day — no split selected.</Text>
+          <Text style={[styles.restText, { color: palette.text.tertiary }]}>Rest day — no split selected.</Text>
         </GlassCard>
       ) : editMode ? (
         <SplitEditor
@@ -417,11 +421,15 @@ export function LogTab() {
 
           {exercises.length > 0 && (
             <Pressable
-              style={[styles.saveBtn, saved && styles.saveBtnSaved]}
+              style={[
+                styles.saveBtn,
+                { backgroundColor: saved ? palette.successBg : palette.success, shadowColor: palette.success },
+                saved && styles.saveBtnSaved,
+              ]}
               onPress={saveSession}
               disabled={saved}
             >
-              <Text style={[styles.saveBtnText, saved && styles.saveBtnTextSaved]}>
+              <Text style={[styles.saveBtnText, saved && { color: palette.success }]}>
                 {saved ? '✓ Saved' : 'Save Session'}
               </Text>
             </Pressable>
@@ -461,16 +469,34 @@ function SplitPicker({
   onSelect: (id: string | null) => void;
   onEdit: () => void;
 }) {
+  const { palette } = useTheme();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.splitScroll} contentContainerStyle={styles.splitRow}>
-      <Pressable style={[styles.splitPill, selected === null && styles.splitPillActive]} onPress={() => onSelect(null)}>
-        <Text style={[styles.splitPillText, selected === null && styles.splitPillTextActive]}>Rest day</Text>
+      <Pressable
+        style={[
+          styles.splitPill,
+          { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
+          selected === null && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+        ]}
+        onPress={() => onSelect(null)}
+      >
+        <Text style={[styles.splitPillText, { color: selected === null ? '#ffffff' : palette.text.secondary }]}>
+          Rest day
+        </Text>
       </Pressable>
       {SPLITS.map((s) => {
         const active = s.id === selected;
         return (
-          <Pressable key={s.id} style={[styles.splitPill, active && styles.splitPillActive]} onPress={() => onSelect(s.id)}>
-            <Text style={[styles.splitPillText, active && styles.splitPillTextActive]}>{s.label}</Text>
+          <Pressable
+            key={s.id}
+            style={[
+              styles.splitPill,
+              { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
+              active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+            ]}
+            onPress={() => onSelect(s.id)}
+          >
+            <Text style={[styles.splitPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{s.label}</Text>
           </Pressable>
         );
       })}
@@ -478,7 +504,7 @@ function SplitPicker({
        * selected, per spec §6.8. */}
       {selected != null && (
         <Pressable style={styles.editBtn} onPress={onEdit}>
-          <Text style={styles.editBtnText}>✏ Edit</Text>
+          <Text style={[styles.editBtnText, { color: palette.text.tertiary }]}>✏ Edit</Text>
         </Pressable>
       )}
     </ScrollView>
@@ -515,31 +541,38 @@ type ExerciseCardProps = {
 const ROMAN = ['i', 'ii', 'iii'];
 
 function ExerciseCard(props: ExerciseCardProps) {
+  const { palette, glass } = useTheme();
   const { exercise: ex } = props;
   const weight = ex.sets[0]?.weight ?? '';
 
   return (
     <GlassCard style={styles.exerciseCard}>
       <View style={styles.exerciseHeaderRow}>
-        <Text style={styles.exerciseName}>{ex.name}</Text>
+        <Text style={[styles.exerciseName, { color: palette.text.primaryAlt }]}>{ex.name}</Text>
         {props.lastWeight != null && props.lastWeight !== '' && (
-          <Text style={styles.lastTag}>LAST {props.lastWeight} LBS</Text>
+          <Text style={[styles.lastTag, { color: palette.text.quaternary }]}>LAST {props.lastWeight} LBS</Text>
         )}
       </View>
 
       <View style={styles.actionRow}>
         {ex.options.length > 1 && (
-          <Pressable style={styles.actionPill} onPress={props.onSwapOpen}>
-            <Text style={styles.actionPillText}>⇄ Swap</Text>
+          <Pressable
+            style={[styles.actionPill, { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' }]}
+            onPress={props.onSwapOpen}
+          >
+            <Text style={[styles.actionPillText, { color: palette.text.secondary }]}>⇄ Swap</Text>
           </Pressable>
         )}
-        <Pressable style={styles.actionPill} onPress={props.onHistoryOpen}>
-          <Text style={styles.actionPillText}>↗ History</Text>
+        <Pressable
+          style={[styles.actionPill, { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' }]}
+          onPress={props.onHistoryOpen}
+        >
+          <Text style={[styles.actionPillText, { color: palette.text.secondary }]}>↗ History</Text>
         </Pressable>
         <View style={styles.actionSpacer} />
         {props.tuning ? (
           <TextInput
-            style={styles.weightInput}
+            style={[styles.weightInput, { backgroundColor: glass.fill, borderColor: palette.accentText, color: palette.text.primaryAlt }]}
             value={props.tuneValue}
             onChangeText={props.onTuneChange}
             onBlur={props.onTuneCommit}
@@ -548,8 +581,11 @@ function ExerciseCard(props: ExerciseCardProps) {
             autoFocus
           />
         ) : (
-          <Pressable style={styles.weightPill} onPress={props.onTuneStart}>
-            <Text style={styles.weightPillText}>≡ {weight} lbs</Text>
+          <Pressable
+            style={[styles.weightPill, { backgroundColor: palette.track }]}
+            onPress={props.onTuneStart}
+          >
+            <Text style={[styles.weightPillText, { color: palette.text.primaryAlt }]}>≡ {weight} lbs</Text>
           </Pressable>
         )}
       </View>
@@ -595,32 +631,46 @@ type SetRowProps = {
 };
 
 function SetRow(props: SetRowProps) {
+  const { palette, glass } = useTheme();
   const { set } = props;
   const targetLabel = set.target != null && set.target !== '' ? ` × ${set.target}` : '';
 
   return (
-    <View style={[styles.setRow, set.status === 'hit' && styles.setRowHit, set.status === 'miss' && styles.setRowMiss]}>
-      <Text style={styles.setRoman}>{props.roman}</Text>
-      <Text style={[styles.setInfo, set.status === 'hit' && styles.setInfoHit]}>
+    <View
+      style={[
+        styles.setRow,
+        { backgroundColor: 'rgba(120,110,150,0.06)', borderColor: 'rgba(120,110,150,0.12)' },
+        set.status === 'hit' && { backgroundColor: palette.successBg, borderColor: palette.successBorder },
+        set.status === 'miss' && { backgroundColor: palette.dangerBg, borderColor: palette.dangerBorder, opacity: 0.85 },
+      ]}
+    >
+      <Text style={[styles.setRoman, { color: palette.text.quaternary }]}>{props.roman}</Text>
+      <Text style={[styles.setInfo, { color: palette.text.secondary }, set.status === 'hit' && { color: palette.success, fontWeight: '600' }]}>
         {props.weight} lbs{targetLabel}
       </Text>
 
       <View style={styles.setControls}>
         {set.status === 'pending' && set.target != null && (
           <>
-            <Pressable style={styles.hitBtn} onPress={props.onHit}>
-              <Text style={styles.hitBtnText}>hit it ✓</Text>
+            <Pressable
+              style={[styles.hitBtn, { backgroundColor: palette.successBg, borderColor: palette.successBorder }]}
+              onPress={props.onHit}
+            >
+              <Text style={[styles.hitBtnText, { color: palette.success }]}>hit it ✓</Text>
             </Pressable>
-            <Pressable style={styles.missBtn} onPress={props.onMissStart}>
-              <Text style={styles.missBtnText}>miss</Text>
+            <Pressable
+              style={[styles.missBtn, { backgroundColor: palette.dangerBg, borderColor: palette.dangerBorder }]}
+              onPress={props.onMissStart}
+            >
+              <Text style={[styles.missBtnText, { color: palette.danger }]}>miss</Text>
             </Pressable>
           </>
         )}
         {set.status === 'pending' && set.target == null && (
           <TextInput
-            style={styles.repsInput}
+            style={[styles.repsInput, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
             placeholder="reps"
-            placeholderTextColor={color.text.faint}
+            placeholderTextColor={palette.text.faint}
             keyboardType="numeric"
             value={typeof set.reps === 'number' ? String(set.reps) : set.reps}
             onChangeText={props.onDirectLog}
@@ -628,7 +678,7 @@ function SetRow(props: SetRowProps) {
         )}
         {set.status === 'hit' && props.isEditingHit && (
           <TextInput
-            style={styles.repsInput}
+            style={[styles.repsInput, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
             value={props.editHitValue}
             onChangeText={props.onEditHitChange}
             onBlur={props.onEditHitCommit}
@@ -640,26 +690,26 @@ function SetRow(props: SetRowProps) {
         {set.status === 'hit' && !props.isEditingHit && (
           <>
             <Pressable onPress={props.onEditHitStart}>
-              <Text style={styles.hitChip}>{set.reps} reps</Text>
+              <Text style={[styles.hitChip, { color: palette.success }]}>{set.reps} reps</Text>
             </Pressable>
             <Pressable hitSlop={8} onPress={props.onReset}>
-              <Text style={styles.resetGlyph}>↺</Text>
+              <Text style={[styles.resetGlyph, { color: palette.text.faint }]}>↺</Text>
             </Pressable>
           </>
         )}
         {set.status === 'miss' && (
           <>
             <TextInput
-              style={styles.repsInput}
+              style={[styles.repsInput, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
               placeholder="how many?"
-              placeholderTextColor={color.text.faint}
+              placeholderTextColor={palette.text.faint}
               keyboardType="numeric"
               value={typeof set.reps === 'number' ? String(set.reps) : set.reps}
               onChangeText={props.onMissChange}
               autoFocus
             />
             <Pressable hitSlop={8} onPress={props.onReset}>
-              <Text style={styles.resetGlyph}>↺</Text>
+              <Text style={[styles.resetGlyph, { color: palette.text.faint }]}>↺</Text>
             </Pressable>
           </>
         )}
@@ -673,18 +723,19 @@ function SetRow(props: SetRowProps) {
 // ---------------------------------------------------------------------------
 
 function DoneExerciseCard({ exercise, onExpand }: { exercise: LocalExercise; onExpand: () => void }) {
+  const { palette } = useTheme();
   const weight = exercise.sets[0]?.weight ?? '';
   const repsSummary = exercise.sets.map((s) => (s.reps === '' || s.reps == null ? '—' : s.reps)).join(' / ');
   return (
     <Pressable onPress={onExpand}>
       <GlassCard style={styles.doneCard}>
         <View style={styles.doneRow}>
-          <View style={styles.doneBadge}>
+          <View style={[styles.doneBadge, { backgroundColor: palette.success }]}>
             <Text style={styles.doneBadgeText}>✓</Text>
           </View>
           <View style={styles.doneInfo}>
-            <Text style={styles.doneName}>{exercise.name}</Text>
-            <Text style={styles.doneSummary}>{`${weight} lbs · ${repsSummary}`}</Text>
+            <Text style={[styles.doneName, { color: palette.text.secondary }]}>{exercise.name}</Text>
+            <Text style={[styles.doneSummary, { color: palette.success }]}>{`${weight} lbs · ${repsSummary}`}</Text>
           </View>
         </View>
       </GlassCard>
@@ -706,25 +757,30 @@ function SwapModal({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  const { palette, glass } = useTheme();
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Swap exercise</Text>
-          {exercise.options.map((opt) => {
-            const active = opt.id === exercise.id;
-            return (
-              <Pressable
-                key={opt.id}
-                style={[styles.swapRow, active && styles.swapRowActive]}
-                onPress={() => onSelect(opt.id)}
-              >
-                <Text style={[styles.swapRowName, active && styles.swapRowNameActive]}>{opt.name}</Text>
-                <Text style={styles.swapRowWeight}>{opt.defaultWeight} lbs</Text>
-              </Pressable>
-            );
-          })}
+        <Pressable style={styles.sheetWrap} onPress={(e) => e.stopPropagation()}>
+          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+          <View style={styles.sheet}>
+            <View style={[styles.sheetHandle, { backgroundColor: palette.track }]} />
+            <Text style={[styles.sheetTitle, { color: palette.text.primary }]}>Swap exercise</Text>
+            {exercise.options.map((opt) => {
+              const active = opt.id === exercise.id;
+              return (
+                <Pressable
+                  key={opt.id}
+                  style={[styles.swapRow, active && { backgroundColor: palette.successBg }]}
+                  onPress={() => onSelect(opt.id)}
+                >
+                  <Text style={[styles.swapRowName, { color: active ? palette.success : palette.text.primary }]}>{opt.name}</Text>
+                  <Text style={[styles.swapRowWeight, { color: palette.text.tertiary }]}>{opt.defaultWeight} lbs</Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
@@ -748,21 +804,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: radius.chip,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  splitPillActive: {
-    backgroundColor: color.accentText,
-    borderColor: color.accentText,
   },
   splitPillText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
-    color: color.text.secondary,
-  },
-  splitPillTextActive: {
-    color: '#ffffff',
   },
   editBtn: {
     paddingHorizontal: 12,
@@ -772,7 +818,6 @@ const styles = StyleSheet.create({
   editBtnText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
-    color: color.text.tertiary,
   },
   restCard: {
     alignItems: 'center',
@@ -780,7 +825,6 @@ const styles = StyleSheet.create({
   },
   restText: {
     fontSize: type.body.fontSize,
-    color: color.text.tertiary,
   },
   exerciseCard: {
     marginBottom: spacing.rowGapMd,
@@ -796,14 +840,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontStyle: 'italic',
     letterSpacing: -0.3,
-    color: color.text.primaryAlt,
     flexShrink: 1,
   },
   lastTag: {
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: color.text.quaternary,
   },
   actionRow: {
     flexDirection: 'row',
@@ -815,14 +857,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.25)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
   },
   actionPillText: {
     fontSize: type.caption.fontSize,
     fontWeight: '600',
-    color: color.text.secondary,
   },
   actionSpacer: {
     flex: 1,
@@ -831,23 +870,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
-    backgroundColor: 'rgba(120,110,150,0.14)',
   },
   weightPillText: {
     fontSize: type.caption.fontSize,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   weightInput: {
     width: 70,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: color.accentText,
     fontSize: type.caption.fontSize,
-    color: color.text.primaryAlt,
     textAlign: 'center',
   },
   setsList: {
@@ -860,34 +894,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 11,
-    backgroundColor: 'rgba(120,110,150,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(120,110,150,0.12)',
-  },
-  setRowHit: {
-    backgroundColor: color.successBg,
-    borderColor: color.successBorder,
-  },
-  setRowMiss: {
-    backgroundColor: color.dangerBg,
-    borderColor: color.dangerBorder,
-    opacity: 0.85,
   },
   setRoman: {
     fontSize: 12,
     fontStyle: 'italic',
     fontFamily: undefined,
-    color: color.text.quaternary,
     width: 16,
   },
   setInfo: {
     flex: 1,
     fontSize: type.meta.fontSize,
-    color: color.text.secondary,
-  },
-  setInfoHit: {
-    color: color.success,
-    fontWeight: '600',
   },
   setControls: {
     flexDirection: 'row',
@@ -898,50 +915,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 9,
-    backgroundColor: color.successBg,
     borderWidth: 1,
-    borderColor: color.successBorder,
   },
   hitBtnText: {
     fontSize: type.caption.fontSize,
     fontWeight: '700',
-    color: color.success,
   },
   missBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 9,
-    backgroundColor: color.dangerBg,
     borderWidth: 1,
-    borderColor: color.dangerBorder,
   },
   missBtnText: {
     fontSize: type.caption.fontSize,
     fontWeight: '700',
-    color: color.danger,
   },
   repsInput: {
     width: 78,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 9,
-    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: 'rgba(120,110,150,0.3)',
     fontSize: type.caption.fontSize,
-    color: color.text.primaryAlt,
     textAlign: 'center',
   },
   hitChip: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '700',
-    color: color.success,
     textDecorationLine: 'underline',
     textDecorationStyle: 'dashed',
   },
   resetGlyph: {
     fontSize: 16,
-    color: color.text.faint,
   },
   doneCard: {
     marginBottom: spacing.rowGapMd,
@@ -957,7 +963,6 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: color.success,
   },
   doneBadgeText: {
     color: '#ffffff',
@@ -971,26 +976,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontStyle: 'italic',
     fontWeight: '600',
-    color: color.text.secondary,
   },
   doneSummary: {
     fontSize: type.caption.fontSize,
-    color: color.success,
     marginTop: 2,
   },
   saveBtn: {
     marginTop: 4,
     paddingVertical: 15,
     borderRadius: radius.input,
-    backgroundColor: color.success,
     alignItems: 'center',
-    shadowColor: color.success,
     shadowOpacity: 0.35,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 6 },
   },
   saveBtnSaved: {
-    backgroundColor: color.successBg,
     shadowOpacity: 0,
   },
   saveBtnText: {
@@ -1000,18 +1000,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: '#ffffff',
   },
-  saveBtnTextSaved: {
-    color: color.success,
-  },
   scrim: {
     flex: 1,
     backgroundColor: 'rgba(20,15,30,0.5)',
     justifyContent: 'flex-end',
   },
-  sheet: {
-    backgroundColor: '#fdfcff',
+  sheetWrap: {
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
+    overflow: 'hidden',
+  },
+  sheet: {
     paddingHorizontal: spacing.screenSide,
     paddingTop: 12,
     paddingBottom: 90,
@@ -1021,13 +1020,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: color.track,
     marginBottom: 14,
   },
   sheetTitle: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: '700',
-    color: color.text.primary,
     marginBottom: 10,
   },
   swapRow: {
@@ -1039,20 +1036,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.input,
     marginBottom: 6,
   },
-  swapRowActive: {
-    backgroundColor: color.successBg,
-  },
   swapRowName: {
     fontSize: type.itemTitle.fontSize,
     fontWeight: '600',
-    color: color.text.primary,
-  },
-  swapRowNameActive: {
-    color: color.success,
   },
   swapRowWeight: {
     fontSize: type.meta.fontSize,
-    color: color.text.tertiary,
   },
 });
 

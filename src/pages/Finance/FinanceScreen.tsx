@@ -6,7 +6,8 @@ import { GlassChip } from '../../components/GlassChip';
 import { HeroCard } from '../../components/HeroCard';
 import { UrgencyPill } from '../../components/UrgencyPill';
 import { useRepo } from '../../hooks/useRepo';
-import { color, radius, spacing, type } from '../../theme/tokens';
+import { radius, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import type { NewRow, SubscriptionRow } from '../../lib/types';
 
 /** Same-day-offset ISO helper as Phone.dc.html's `iso(n)` — relative to "today". */
@@ -35,6 +36,7 @@ const usd0 = (n: number): string => `$${n.toFixed(0)}`;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function FinanceScreen() {
+  const { palette, glass } = useTheme();
   const { rows, insert, remove } = useRepo('subscriptions', SEED_SUBSCRIPTIONS);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
@@ -82,17 +84,19 @@ export default function FinanceScreen() {
     setShowAdd(false);
   };
 
+  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
+
   return (
     <AppShell>
       <View style={styles.header}>
-        <Text style={styles.title}>💰 Finance</Text>
-        <Text style={styles.subtitle}>Subscriptions</Text>
+        <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Finance</Text>
+        <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Subscriptions</Text>
       </View>
 
       <HeroCard>
-        <Text style={styles.heroLabel}>Total monthly</Text>
-        <Text style={styles.heroTotal}>{usd0(total)}</Text>
-        <Text style={styles.heroCaption}>{rows.length} active subscriptions</Text>
+        <Text style={[styles.heroLabel, { color: palette.text.tertiary }]}>Total monthly</Text>
+        <Text style={[styles.heroTotal, { color: palette.text.primaryAlt }]}>{usd0(total)}</Text>
+        <Text style={[styles.heroCaption, { color: palette.text.quaternary }]}>{rows.length} active subscriptions</Text>
       </HeroCard>
 
       {categories.length > 0 && (
@@ -104,8 +108,8 @@ export default function FinanceScreen() {
         >
           {categories.map((cat) => (
             <GlassChip key={cat.name} style={styles.chip}>
-              <Text style={styles.chipLabel}>{cat.name}</Text>
-              <Text style={styles.chipValue}>{usd0(cat.subtotal)}</Text>
+              <Text style={[styles.chipLabel, { color: palette.text.tertiary }]}>{cat.name}</Text>
+              <Text style={[styles.chipValue, { color: palette.text.primaryAlt }]}>{usd0(cat.subtotal)}</Text>
             </GlassChip>
           ))}
         </ScrollView>
@@ -114,9 +118,12 @@ export default function FinanceScreen() {
       <GlassCard style={styles.listCard} contentStyle={styles.listCardContent}>
         <View style={styles.addSection}>
           <View style={styles.addToggleRow}>
-            <Text style={styles.addToggleTitle}>Subscriptions</Text>
-            <Pressable onPress={() => setShowAdd((v) => !v)} style={styles.addButton}>
-              <Text style={styles.addButtonGlyph}>{showAdd ? '×' : '+'}</Text>
+            <Text style={[styles.addToggleTitle, { color: palette.text.primaryAlt }]}>Subscriptions</Text>
+            <Pressable
+              onPress={() => setShowAdd((v) => !v)}
+              style={[styles.addButton, { backgroundColor: glass.fill }]}
+            >
+              <Text style={[styles.addButtonGlyph, { color: palette.text.primaryAlt }]}>{showAdd ? '×' : '+'}</Text>
             </Pressable>
           </View>
 
@@ -124,33 +131,33 @@ export default function FinanceScreen() {
             <View style={styles.form}>
               <View style={styles.formRow}>
                 <TextInput
-                  style={[styles.input, styles.iconInput]}
+                  style={[styles.input, styles.iconInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="🎬"
-                  placeholderTextColor={color.text.faint}
+                  placeholderTextColor={palette.text.faint}
                   value={icon}
                   onChangeText={setIcon}
                   maxLength={4}
                 />
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, styles.flexInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="Name"
-                  placeholderTextColor={color.text.faint}
+                  placeholderTextColor={palette.text.faint}
                   value={name}
                   onChangeText={setName}
                 />
               </View>
               <View style={styles.formRow}>
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, styles.flexInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="Category"
-                  placeholderTextColor={color.text.faint}
+                  placeholderTextColor={palette.text.faint}
                   value={category}
                   onChangeText={setCategory}
                 />
                 <TextInput
-                  style={[styles.input, styles.amountInput]}
+                  style={[styles.input, styles.amountInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="$0.00"
-                  placeholderTextColor={color.text.faint}
+                  placeholderTextColor={palette.text.faint}
                   value={amount}
                   onChangeText={setAmount}
                   keyboardType="decimal-pad"
@@ -158,14 +165,14 @@ export default function FinanceScreen() {
               </View>
               <View style={styles.formRow}>
                 <TextInput
-                  style={[styles.input, styles.flexInput]}
+                  style={[styles.input, styles.flexInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="Renews YYYY-MM-DD (optional)"
-                  placeholderTextColor={color.text.faint}
+                  placeholderTextColor={palette.text.faint}
                   value={renewsOn}
                   onChangeText={setRenewsOn}
                 />
-                <Pressable onPress={handleAdd} style={styles.submitButton}>
-                  <Text style={styles.submitButtonText}>Add</Text>
+                <Pressable onPress={handleAdd} style={[styles.submitButton, { backgroundColor: glass.borderElevated }]}>
+                  <Text style={[styles.submitButtonText, { color: palette.text.primaryAlt }]}>Add</Text>
                 </Pressable>
               </View>
             </View>
@@ -173,20 +180,20 @@ export default function FinanceScreen() {
         </View>
 
         {rows.map((sub) => (
-          <View key={sub.id} style={styles.row}>
-            <View style={styles.iconTile}>
+          <View key={sub.id} style={[styles.row, { borderTopColor: palette.hairline }]}>
+            <View style={[styles.iconTile, { backgroundColor: glass.fill }]}>
               <Text style={styles.iconGlyph}>{sub.icon}</Text>
             </View>
             <View style={styles.rowMain}>
-              <Text style={styles.rowName}>{sub.name}</Text>
-              <Text style={styles.rowCategory}>{sub.category}</Text>
+              <Text style={[styles.rowName, { color: palette.text.primaryAlt }]}>{sub.name}</Text>
+              <Text style={[styles.rowCategory, { color: palette.text.quaternary }]}>{sub.category}</Text>
             </View>
             <View style={styles.rowRight}>
-              <Text style={styles.rowCost}>{usd(sub.amount)}</Text>
+              <Text style={[styles.rowCost, { color: palette.text.primaryAlt }]}>{usd(sub.amount)}</Text>
               <UrgencyPill dueDate={sub.renews_on} style={styles.rowPill} />
             </View>
             <Pressable onPress={() => remove(sub.id)} style={styles.removeButton} hitSlop={8}>
-              <Text style={styles.removeGlyph}>×</Text>
+              <Text style={[styles.removeGlyph, { color: palette.text.dimmed }]}>×</Text>
             </Pressable>
           </View>
         ))}
@@ -204,28 +211,23 @@ const styles = StyleSheet.create({
     fontSize: type.screenTitle.fontSize,
     fontWeight: type.screenTitle.fontWeight,
     letterSpacing: type.screenTitle.letterSpacing,
-    color: color.text.primaryAlt,
   },
   subtitle: {
     fontSize: type.body.fontSize,
-    color: color.text.secondaryAlt,
     marginTop: 4,
   },
   heroLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: color.text.tertiary,
   },
   heroTotal: {
     fontSize: type.heroNumber.fontSize,
     fontWeight: type.heroNumber.fontWeight,
     letterSpacing: type.heroNumber.letterSpacing,
-    color: color.text.primaryAlt,
     marginTop: 2,
   },
   heroCaption: {
     fontSize: 14,
-    color: color.text.quaternary,
     marginTop: 2,
   },
   chipScroller: {
@@ -240,12 +242,10 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     fontSize: type.caption.fontSize,
-    color: color.text.tertiary,
   },
   chipValue: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: type.cardTitle.fontWeight,
-    color: color.text.primaryAlt,
     marginTop: 1,
   },
   listCard: {
@@ -266,20 +266,17 @@ const styles = StyleSheet.create({
   addToggleTitle: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: type.cardTitle.fontWeight,
-    color: color.text.primaryAlt,
   },
   addButton: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   addButtonGlyph: {
     fontSize: 18,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   form: {
     marginTop: 10,
@@ -292,12 +289,9 @@ const styles = StyleSheet.create({
   input: {
     height: 42,
     borderRadius: radius.input,
-    backgroundColor: 'rgba(255,255,255,0.35)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
     paddingHorizontal: 12,
     fontSize: type.body.fontSize,
-    color: color.text.primary,
   },
   iconInput: {
     width: 50,
@@ -314,14 +308,12 @@ const styles = StyleSheet.create({
     width: 64,
     height: 42,
     borderRadius: radius.input,
-    backgroundColor: 'rgba(255,255,255,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   submitButtonText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   row: {
     flexDirection: 'row',
@@ -330,13 +322,11 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: 4,
     borderTopWidth: 1,
-    borderTopColor: color.hairline,
   },
   iconTile: {
     width: 42,
     height: 42,
     borderRadius: radius.iconTile,
-    backgroundColor: 'rgba(255,255,255,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -350,11 +340,9 @@ const styles = StyleSheet.create({
   rowName: {
     fontSize: type.itemTitle.fontSize,
     fontWeight: type.itemTitle.fontWeight,
-    color: color.text.primaryAlt,
   },
   rowCategory: {
     fontSize: type.meta.fontSize,
-    color: color.text.quaternary,
     marginTop: 1,
   },
   rowRight: {
@@ -363,7 +351,6 @@ const styles = StyleSheet.create({
   rowCost: {
     fontSize: 16,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   rowPill: {
     marginTop: 3,
@@ -376,7 +363,6 @@ const styles = StyleSheet.create({
   },
   removeGlyph: {
     fontSize: 18,
-    color: color.text.dimmed,
     fontWeight: '600',
   },
 });

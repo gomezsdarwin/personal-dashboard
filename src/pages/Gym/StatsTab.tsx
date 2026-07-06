@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassCard } from '../../components/GlassCard';
 import { GlassChip } from '../../components/GlassChip';
-import { color, spacing, type } from '../../theme/tokens';
+import { spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import { useRepo } from '../../hooks/useRepo';
 import { SPLITS } from '../../data/workouts';
 import type { GymSessionRow, GymSet } from '../../lib/types';
@@ -76,6 +77,7 @@ function trendDirection(values: (number | string)[]): 'up' | 'down' | 'flat' {
 // ---------------------------------------------------------------------------
 
 export function StatsTab() {
+  const { palette } = useTheme();
   const { rows: sessions } = useRepo('gym_sessions');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -107,49 +109,53 @@ export function StatsTab() {
     <View>
       <View style={styles.summaryRow}>
         <GlassChip style={styles.summaryChip} contentStyle={styles.summaryChipContent}>
-          <Text style={styles.summaryValue}>{totalSessions}</Text>
-          <Text style={styles.summaryLabel}>Sessions</Text>
+          <Text style={[styles.summaryValue, { color: palette.text.primaryAlt }]}>{totalSessions}</Text>
+          <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>Sessions</Text>
         </GlassChip>
         <GlassChip style={styles.summaryChip} contentStyle={styles.summaryChipContent}>
-          <Text style={styles.summaryValue}>{sessionsThisMonth}</Text>
-          <Text style={styles.summaryLabel}>This month</Text>
+          <Text style={[styles.summaryValue, { color: palette.text.primaryAlt }]}>{sessionsThisMonth}</Text>
+          <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>This month</Text>
         </GlassChip>
         <GlassChip style={styles.summaryChip} contentStyle={styles.summaryChipContent}>
-          <Text style={styles.summaryValue}>{daysSinceLast == null ? '—' : daysSinceLast === 0 ? 'Today' : `${daysSinceLast}d`}</Text>
-          <Text style={styles.summaryLabel}>Last session</Text>
+          <Text style={[styles.summaryValue, { color: palette.text.primaryAlt }]}>
+            {daysSinceLast == null ? '—' : daysSinceLast === 0 ? 'Today' : `${daysSinceLast}d`}
+          </Text>
+          <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>Last session</Text>
         </GlassChip>
       </View>
 
       {trends.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Progress trends</Text>
+          <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Progress trends</Text>
           <GlassCard>
             {trends.map((row, i) => {
               const dir = trendDirection(row.values);
+              const dirColor =
+                dir === 'up' ? palette.success : dir === 'down' ? palette.danger : palette.text.tertiary;
               return (
                 <View
                   key={row.name}
-                  style={[styles.trendRow, i > 0 && styles.trendRowDivider]}
+                  style={[styles.trendRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
                 >
-                  <Text style={styles.trendName} numberOfLines={1}>
+                  <Text style={[styles.trendName, { color: palette.text.secondary }]} numberOfLines={1}>
                     {row.name}
                   </Text>
                   <View style={styles.trendValues}>
                     {row.values.map((v, vi) => (
                       <React.Fragment key={vi}>
-                        {vi > 0 && <Text style={styles.trendArrowSep}>→</Text>}
-                        <Text style={[styles.trendValue, vi === row.values.length - 1 && styles.trendValueLast]}>
+                        {vi > 0 && <Text style={[styles.trendArrowSep, { color: palette.text.faint }]}>→</Text>}
+                        <Text
+                          style={[
+                            styles.trendValue,
+                            { color: palette.text.dimmed },
+                            vi === row.values.length - 1 && [styles.trendValueLast, { color: palette.accentText }],
+                          ]}
+                        >
                           {v}
                         </Text>
                       </React.Fragment>
                     ))}
-                    <Text
-                      style={[
-                        styles.trendDirection,
-                        dir === 'up' && styles.trendDirectionUp,
-                        dir === 'down' && styles.trendDirectionDown,
-                      ]}
-                    >
+                    <Text style={[styles.trendDirection, { color: dirColor }]}>
                       {dir === 'up' ? '↑' : dir === 'down' ? '↓' : '→'}
                     </Text>
                   </View>
@@ -161,10 +167,10 @@ export function StatsTab() {
       )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Session history</Text>
+        <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Session history</Text>
         {sortedNewestFirst.length === 0 ? (
           <GlassCard>
-            <Text style={styles.emptyText}>No sessions logged yet</Text>
+            <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No sessions logged yet</Text>
           </GlassCard>
         ) : (
           sortedNewestFirst.map((session) => {
@@ -175,24 +181,24 @@ export function StatsTab() {
               <GlassCard key={key} style={styles.sessionCard}>
                 <Pressable onPress={() => toggle(key)} style={styles.sessionHeader}>
                   <View style={styles.sessionHeaderLeft}>
-                    <Text style={styles.sessionSplit}>{splitLabel}</Text>
-                    <Text style={styles.sessionMeta}>{`${session.exercises.length} exercises`}</Text>
+                    <Text style={[styles.sessionSplit, { color: palette.text.primaryAlt }]}>{splitLabel}</Text>
+                    <Text style={[styles.sessionMeta, { color: palette.text.tertiary }]}>{`${session.exercises.length} exercises`}</Text>
                   </View>
                   <View style={styles.sessionHeaderRight}>
-                    <Text style={styles.sessionDate}>{relativeDate(session.date, today)}</Text>
-                    <Text style={styles.sessionChevron}>{isOpen ? '▾' : '▸'}</Text>
+                    <Text style={[styles.sessionDate, { color: palette.text.secondary }]}>{relativeDate(session.date, today)}</Text>
+                    <Text style={[styles.sessionChevron, { color: palette.text.tertiary }]}>{isOpen ? '▾' : '▸'}</Text>
                   </View>
                 </Pressable>
 
                 {isOpen && (
-                  <View style={styles.sessionBody}>
+                  <View style={[styles.sessionBody, { borderTopColor: palette.hairline }]}>
                     {session.exercises.map((ex, i) => (
                       <View key={`${ex.id}-${i}`} style={styles.exerciseRow}>
-                        <Text style={styles.exerciseRowName} numberOfLines={1}>
+                        <Text style={[styles.exerciseRowName, { color: palette.text.secondary }]} numberOfLines={1}>
                           {ex.name}
                         </Text>
-                        <Text style={styles.exerciseRowWeight}>{`${ex.sets[0]?.weight ?? '—'} lbs`}</Text>
-                        <Text style={styles.exerciseRowReps}>{repsSummary(ex.sets)}</Text>
+                        <Text style={[styles.exerciseRowWeight, { color: palette.text.tertiary }]}>{`${ex.sets[0]?.weight ?? '—'} lbs`}</Text>
+                        <Text style={[styles.exerciseRowReps, { color: palette.text.quaternary }]}>{repsSummary(ex.sets)}</Text>
                       </View>
                     ))}
                   </View>
@@ -222,11 +228,9 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   summaryLabel: {
     fontSize: type.caption.fontSize,
-    color: color.text.tertiary,
     marginTop: 2,
   },
   section: {
@@ -237,7 +241,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
-    color: color.text.tertiary,
     marginBottom: spacing.rowGapSm,
   },
   trendRow: {
@@ -246,15 +249,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
   },
-  trendRowDivider: {
-    borderTopWidth: 1,
-    borderTopColor: color.hairline,
-  },
   trendName: {
     flex: 1,
     fontSize: type.bodyMedium.fontSize,
     fontWeight: '500',
-    color: color.text.secondary,
     marginRight: 8,
   },
   trendValues: {
@@ -264,32 +262,21 @@ const styles = StyleSheet.create({
   },
   trendArrowSep: {
     fontSize: 11,
-    color: color.text.faint,
   },
   trendValue: {
     fontSize: type.meta.fontSize,
-    color: color.text.dimmed,
   },
   trendValueLast: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '700',
-    color: color.accentText,
   },
   trendDirection: {
     fontSize: 14,
     fontWeight: '700',
-    color: color.text.tertiary,
     marginLeft: 4,
-  },
-  trendDirectionUp: {
-    color: color.success,
-  },
-  trendDirectionDown: {
-    color: color.danger,
   },
   emptyText: {
     fontSize: type.body.fontSize,
-    color: color.text.tertiary,
     textAlign: 'center',
     paddingVertical: 8,
   },
@@ -307,11 +294,9 @@ const styles = StyleSheet.create({
   sessionSplit: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: '700',
-    color: color.text.primaryAlt,
   },
   sessionMeta: {
     fontSize: type.caption.fontSize,
-    color: color.text.tertiary,
     marginTop: 2,
   },
   sessionHeaderRight: {
@@ -321,17 +306,14 @@ const styles = StyleSheet.create({
   },
   sessionDate: {
     fontSize: type.meta.fontSize,
-    color: color.text.secondary,
   },
   sessionChevron: {
     fontSize: 13,
-    color: color.text.tertiary,
   },
   sessionBody: {
     marginTop: spacing.rowGapSm,
     paddingTop: spacing.rowGapSm,
     borderTopWidth: 1,
-    borderTopColor: color.hairline,
     gap: 8,
   },
   exerciseRow: {
@@ -343,16 +325,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: type.meta.fontSize,
     fontWeight: '600',
-    color: color.text.secondary,
   },
   exerciseRowWeight: {
     fontSize: type.meta.fontSize,
-    color: color.text.tertiary,
   },
   exerciseRowReps: {
     fontSize: type.meta.fontSize,
     fontFamily: undefined,
-    color: color.text.quaternary,
     minWidth: 60,
     textAlign: 'right',
   },

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '../../components/GlassCard';
-import { color, radius, spacing, type } from '../../theme/tokens';
+import { radius, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/ThemeContext';
 import { MUSCLES, getDefaultSlots, getMuscle, getSlotOptions, type ExerciseOption } from '../../data/workouts';
 import type { GymSplitConfigEntry } from '../../lib/types';
 
@@ -118,6 +119,7 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
   const [newName, setNewName] = useState('');
   const [newWeight, setNewWeight] = useState('');
   const [newMuscle, setNewMuscle] = useState<string>(Object.keys(MUSCLES)[0] ?? '');
+  const { palette, glass } = useTheme();
 
   function toggle(slot: string) {
     setRows((prev) => sortEnabledFirst(prev.map((r) => (r.slot === slot ? { ...r, enabled: !r.enabled } : r))));
@@ -197,12 +199,15 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
   return (
     <View>
       <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>Edit split</Text>
+        <Text style={[styles.headerTitle, { color: palette.text.primaryAlt }]}>Edit split</Text>
         <View style={styles.headerActions}>
-          <Pressable style={styles.cancelBtn} onPress={onCancel}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
+          <Pressable
+            style={[styles.cancelBtn, { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' }]}
+            onPress={onCancel}
+          >
+            <Text style={[styles.cancelBtnText, { color: palette.text.secondary }]}>Cancel</Text>
           </Pressable>
-          <Pressable style={styles.saveBtn} onPress={handleSave}>
+          <Pressable style={[styles.saveBtn, { backgroundColor: palette.success }]} onPress={handleSave}>
             <Text style={styles.saveBtnText}>Save</Text>
           </Pressable>
         </View>
@@ -225,20 +230,20 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
       </GlassCard>
 
       <GlassCard style={styles.addCard}>
-        <Text style={styles.addLabel}>Add custom exercise</Text>
+        <Text style={[styles.addLabel, { color: palette.text.secondary }]}>Add custom exercise</Text>
         <View style={styles.addInputRow}>
           <TextInput
-            style={[styles.addInput, styles.addInputName]}
+            style={[styles.addInput, styles.addInputName, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
             placeholder="Name"
-            placeholderTextColor={color.text.faint}
+            placeholderTextColor={palette.text.faint}
             value={newName}
             onChangeText={setNewName}
             onSubmitEditing={addCustom}
           />
           <TextInput
-            style={[styles.addInput, styles.addInputWeight]}
+            style={[styles.addInput, styles.addInputWeight, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
             placeholder="lbs"
-            placeholderTextColor={color.text.faint}
+            placeholderTextColor={palette.text.faint}
             keyboardType="numeric"
             value={newWeight}
             onChangeText={setNewWeight}
@@ -251,15 +256,19 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
             return (
               <Pressable
                 key={muscle}
-                style={[styles.musclePill, active && styles.musclePillActive]}
+                style={[
+                  styles.musclePill,
+                  { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
+                  active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+                ]}
                 onPress={() => setNewMuscle(muscle)}
               >
-                <Text style={[styles.musclePillText, active && styles.musclePillTextActive]}>{muscle}</Text>
+                <Text style={[styles.musclePillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{muscle}</Text>
               </Pressable>
             );
           })}
         </ScrollView>
-        <Pressable style={styles.addBtn} onPress={addCustom}>
+        <Pressable style={[styles.addBtn, { backgroundColor: palette.accentText }]} onPress={addCustom}>
           <Text style={styles.addBtnText}>+ Add</Text>
         </Pressable>
       </GlassCard>
@@ -290,17 +299,28 @@ function EditorRowView({
   onMoveDown: () => void;
   onRemove: () => void;
 }) {
+  const { palette } = useTheme();
   return (
-    <View style={[styles.row, !row.enabled && styles.rowDisabled]}>
-      <Pressable style={[styles.toggleKnob, row.enabled && styles.toggleKnobOn]} onPress={onToggle} hitSlop={6}>
+    <View style={[styles.row, { borderBottomColor: palette.hairline }, !row.enabled && styles.rowDisabled]}>
+      {/* Rounded-square toggle (matches Home/habit-tracker's checkbox shape language,
+          rather than the fully-round knob this used previously). */}
+      <Pressable
+        style={[
+          styles.toggleKnob,
+          { backgroundColor: 'rgba(120,110,150,0.14)', borderColor: 'rgba(120,110,150,0.25)' },
+          row.enabled && { backgroundColor: palette.success, borderColor: palette.success },
+        ]}
+        onPress={onToggle}
+        hitSlop={6}
+      >
         {row.enabled && <Text style={styles.toggleKnobGlyph}>✓</Text>}
       </Pressable>
 
       <View style={styles.rowInfo}>
-        <Text style={[styles.rowName, !row.enabled && styles.rowNameDisabled]} numberOfLines={1}>
+        <Text style={[styles.rowName, { color: row.enabled ? palette.text.primaryAlt : palette.text.tertiary }]} numberOfLines={1}>
           {row.name}
         </Text>
-        <Text style={styles.rowMuscle}>{row.muscle}</Text>
+        <Text style={[styles.rowMuscle, { color: palette.text.quaternary }]}>{row.muscle}</Text>
         {!row.custom && row.enabled && row.options.length > 1 && (
           <View style={styles.altPillRow}>
             {row.options.map((opt) => {
@@ -308,10 +328,14 @@ function EditorRowView({
               return (
                 <Pressable
                   key={opt.id}
-                  style={[styles.altPill, active && styles.altPillActive]}
+                  style={[
+                    styles.altPill,
+                    { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' },
+                    active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+                  ]}
                   onPress={() => onPickAlt(opt.id)}
                 >
-                  <Text style={[styles.altPillText, active && styles.altPillTextActive]}>{opt.name}</Text>
+                  <Text style={[styles.altPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{opt.name}</Text>
                 </Pressable>
               );
             })}
@@ -321,16 +345,16 @@ function EditorRowView({
 
       <View style={styles.rowActions}>
         {row.custom ? (
-          <Pressable style={styles.removeBtn} onPress={onRemove} hitSlop={8}>
-            <Text style={styles.removeBtnText}>×</Text>
+          <Pressable style={[styles.removeBtn, { backgroundColor: palette.dangerBg }]} onPress={onRemove} hitSlop={8}>
+            <Text style={[styles.removeBtnText, { color: palette.danger }]}>×</Text>
           </Pressable>
         ) : (
           <View style={styles.reorderCol}>
             <Pressable style={[styles.reorderBtn, isFirst && styles.reorderBtnDisabled]} onPress={onMoveUp} disabled={isFirst} hitSlop={4}>
-              <Text style={styles.reorderBtnText}>▲</Text>
+              <Text style={[styles.reorderBtnText, { color: palette.text.tertiary }]}>▲</Text>
             </Pressable>
             <Pressable style={[styles.reorderBtn, isLast && styles.reorderBtnDisabled]} onPress={onMoveDown} disabled={isLast} hitSlop={4}>
-              <Text style={styles.reorderBtnText}>▼</Text>
+              <Text style={[styles.reorderBtnText, { color: palette.text.tertiary }]}>▼</Text>
             </Pressable>
           </View>
         )}
@@ -354,7 +378,6 @@ const styles = StyleSheet.create({
     fontSize: type.cardTitle.fontSize,
     fontWeight: '700',
     fontStyle: 'italic',
-    color: color.text.primaryAlt,
   },
   headerActions: {
     flexDirection: 'row',
@@ -364,20 +387,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.25)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
   },
   cancelBtnText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
-    color: color.text.secondary,
   },
   saveBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: color.success,
   },
   saveBtnText: {
     fontSize: type.metaSemibold.fontSize,
@@ -393,7 +412,6 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: color.hairline,
   },
   rowDisabled: {
     opacity: 0.55,
@@ -401,20 +419,10 @@ const styles = StyleSheet.create({
   toggleKnob: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(120,110,150,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(120,110,150,0.25)',
-  },
-  toggleKnobOn: {
-    backgroundColor: color.success,
-    borderColor: color.success,
-    shadowColor: color.success,
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 0 },
   },
   toggleKnobGlyph: {
     color: '#ffffff',
@@ -427,14 +435,9 @@ const styles = StyleSheet.create({
   rowName: {
     fontSize: type.itemTitle.fontSize,
     fontWeight: '600',
-    color: color.text.primaryAlt,
-  },
-  rowNameDisabled: {
-    color: color.text.tertiary,
   },
   rowMuscle: {
     fontSize: type.caption.fontSize,
-    color: color.text.quaternary,
     marginTop: 1,
   },
   altPillRow: {
@@ -447,21 +450,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.25)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  altPillActive: {
-    backgroundColor: color.accentText,
-    borderColor: color.accentText,
   },
   altPillText: {
     fontSize: 11,
     fontWeight: '600',
-    color: color.text.secondary,
-  },
-  altPillTextActive: {
-    color: '#ffffff',
   },
   rowActions: {
     alignItems: 'center',
@@ -482,7 +475,6 @@ const styles = StyleSheet.create({
   },
   reorderBtnText: {
     fontSize: 11,
-    color: color.text.tertiary,
   },
   removeBtn: {
     width: 26,
@@ -490,12 +482,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 13,
-    backgroundColor: color.dangerBg,
   },
   removeBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: color.danger,
     lineHeight: 18,
   },
   addCard: {
@@ -504,7 +494,6 @@ const styles = StyleSheet.create({
   addLabel: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '700',
-    color: color.text.secondary,
     marginBottom: 10,
   },
   addInputRow: {
@@ -516,11 +505,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: radius.input,
-    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: 'rgba(120,110,150,0.3)',
     fontSize: type.body.fontSize,
-    color: color.text.primaryAlt,
   },
   addInputName: {
     flex: 1,
@@ -537,28 +523,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.chip,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  musclePillActive: {
-    backgroundColor: color.accentText,
-    borderColor: color.accentText,
   },
   musclePillText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
-    color: color.text.secondary,
-  },
-  musclePillTextActive: {
-    color: '#ffffff',
   },
   addBtn: {
     alignSelf: 'flex-start',
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: radius.input,
-    backgroundColor: color.accentText,
   },
   addBtnText: {
     fontSize: type.metaSemibold.fontSize,

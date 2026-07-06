@@ -1,8 +1,9 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { glass } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
 
 /**
  * Minimal structural subset of React Navigation's BottomTabBarProps that this
@@ -26,12 +27,26 @@ export type TabBarProps = {
   };
 };
 
-const TAB_ICON: Record<string, string> = {
-  index: '🏠',
-  gym: '🏋️',
-  finance: '💰',
-  peptides: '💊',
-};
+type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+/** Matches sampleindex.html's Material Symbols choices (dashboard/fitness_center/
+ *  payments/pill) via MaterialCommunityIcons' closest equivalents. Only Home swaps
+ *  outline<->filled between states — the reference keeps the other three tabs' glyphs
+ *  identical across active/inactive, differentiating purely by color + highlight pill. */
+function tabIconName(routeName: string, focused: boolean): MCIName {
+  switch (routeName) {
+    case 'index':
+      return focused ? 'view-dashboard' : 'view-dashboard-outline';
+    case 'gym':
+      return 'dumbbell';
+    case 'finance':
+      return 'cash-multiple';
+    case 'peptides':
+      return 'pill';
+    default:
+      return 'circle-outline';
+  }
+}
 
 const TAB_LABEL: Record<string, string> = {
   index: 'Home',
@@ -41,29 +56,30 @@ const TAB_LABEL: Record<string, string> = {
 };
 
 /**
- * Custom floating glass bottom tab bar for expo-router's Tabs `tabBar` prop.
- * 56x56 rounded glass highlight sits behind the active tab's icon+label.
+ * Custom glass bottom tab bar for expo-router's Tabs `tabBar` prop. Edge-to-edge, bottom-
+ * anchored, top-corners-only radius (`rounded-t-[32px]`) — matches sampleindex.html's
+ * `<nav class="fixed bottom-0 left-0 w-full ... bg-black/60 backdrop-blur-[80px]
+ * border-t border-white/15 rounded-t-[32px]">` exactly, replacing the previous floating
+ * pill-shaped bar (16px side margins, fully-rounded corners).
  */
 export function TabBar({ state, descriptors, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
-  const g = glass.tabBar;
+  const { glass, palette, mode } = useTheme();
+
+  const inactiveColor = mode === 'dark' ? 'rgba(255,255,255,0.5)' : palette.text.tertiary;
 
   return (
-    <View style={[styles.wrapper, { bottom: Math.max(insets.bottom, 16) }]} pointerEvents="box-none">
-      <View
-        style={[
-          styles.clip,
-          { borderRadius: g.borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth },
-        ]}
-      >
-        <BlurView intensity={g.intensity} tint={g.tint} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: g.backgroundColor }]} />
-        <View style={styles.row}>
+    <View style={styles.wrapper} pointerEvents="box-none">
+      <View style={[styles.clip, { borderColor: glass.borderTabBar }]}>
+        <BlurView intensity={glass.blurIntensityTabBar} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fillTabBar }]} />
+        <View style={[styles.row, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {state.routes.map((route, index) => {
             const { options } = descriptors[route.key];
             const isFocused = state.index === index;
             const label = TAB_LABEL[route.name] ?? (options.title ?? route.name);
-            const icon = TAB_ICON[route.name] ?? '•';
+            const iconName = tabIconName(route.name, isFocused);
+            const color = isFocused ? palette.accentText : inactiveColor;
 
             const onPress = () => {
               const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -80,9 +96,15 @@ export function TabBar({ state, descriptors, navigation }: TabBarProps) {
                 accessibilityState={isFocused ? { selected: true } : {}}
                 style={styles.tab}
               >
-                {isFocused ? <View style={styles.highlight} /> : null}
-                <Text style={styles.icon}>{icon}</Text>
-                <Text style={styles.label}>{label}</Text>
+                <View
+                  style={[
+                    styles.contentWrap,
+                    isFocused && { backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' },
+                  ]}
+                >
+                  <MaterialCommunityIcons name={iconName} size={26} color={color} />
+                  <Text style={[styles.label, { color }]}>{label}</Text>
+                </View>
               </Pressable>
             );
           })}
@@ -95,49 +117,46 @@ export function TabBar({ state, descriptors, navigation }: TabBarProps) {
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   clip: {
-    height: 72,
     overflow: 'hidden',
-    shadowColor: 'rgba(90,70,130,0.22)',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderTopWidth: 1,
+    shadowColor: 'rgba(0,0,0,0.3)',
     shadowOpacity: 1,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 14 },
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: -6 },
     elevation: 10,
   },
   row: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
+    paddingTop: 12,
   },
   tab: {
-    position: 'relative',
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+  },
+  contentWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingHorizontal: 18,
     paddingVertical: 8,
-  },
-  highlight: {
-    position: 'absolute',
-    top: 2,
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-  },
-  icon: {
-    fontSize: 25,
-    lineHeight: 28,
+    borderRadius: 16,
   },
   label: {
     fontSize: 10,
-    fontWeight: '600',
-    color: '#4a4558',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
 });
 

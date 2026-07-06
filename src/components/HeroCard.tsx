@@ -2,7 +2,8 @@ import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { glass } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
+import { radius } from '../theme/tokens';
 
 type Props = {
   children?: React.ReactNode;
@@ -11,35 +12,41 @@ type Props = {
 };
 
 /**
- * Gradient-tinted hero glass card per HANDOFF (used for the Finance monthly total).
- * background: linear-gradient(140deg, rgba(255,255,255,0.26), rgba(255,255,255,0.08))
- * over blur(34) saturate(1.9), 1px rgba(255,255,255,0.45) border, 28px radius.
+ * Gradient-tinted hero glass card (used for the Finance monthly total): same blur + flat-
+ * border treatment as GlassCard, plus an extra diagonal tint glaze (glass.heroGradient,
+ * brighter top-left) layered over the flat fill for a touch more presence than a plain
+ * card. Border uses borderElevated (a touch stronger than a plain card's) since this
+ * surface is meant to read as elevated/emphasized.
  */
 export function HeroCard({ children, style, contentStyle }: Props) {
-  const g = glass.hero;
+  const { glass } = useTheme();
+  const borderRadius = radius.card;
+
   return (
     <View
       style={[
         {
-          borderRadius: g.borderRadius,
-          shadowColor: g.shadowColor,
-          shadowOpacity: g.shadowOpacity,
-          shadowRadius: g.shadowRadius,
-          shadowOffset: g.shadowOffset,
+          borderRadius,
+          shadowColor: 'rgba(0,0,0,0.3)',
+          shadowOpacity: 1,
+          shadowRadius: 30,
+          shadowOffset: { width: 0, height: 12 },
           elevation: 6,
         },
         style,
       ]}
     >
-      <View style={[styles.clip, { borderRadius: g.borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth }]}>
-        <BlurView intensity={g.intensity} tint={g.tint} style={StyleSheet.absoluteFill} />
+      <View
+        style={[styles.clip, { borderRadius, borderWidth: 1, borderColor: glass.borderElevated }]}
+      >
+        <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
         <LinearGradient
-          colors={g.gradientColors}
+          colors={glass.heroGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 0.77, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
-        <View style={styles.topHighlight} />
         <View style={[styles.content, contentStyle]}>{children}</View>
       </View>
     </View>
@@ -49,14 +56,6 @@ export function HeroCard({ children, style, contentStyle }: Props) {
 const styles = StyleSheet.create({
   clip: {
     overflow: 'hidden',
-  },
-  topHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   content: {
     padding: 20,

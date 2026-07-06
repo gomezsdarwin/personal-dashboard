@@ -8,16 +8,17 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
-import { UrgencyPill } from '../../components/UrgencyPill';
+import { WeekStrip } from '../../components/WeekStrip';
+import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
-import { dueMeta, fmt } from '../../lib/dueDate';
+import { dueMeta } from '../../lib/dueDate';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { NewRow, TaskRow } from '../../lib/types';
-import { accent } from '../../theme/accent';
-import { color, type as typeScale } from '../../theme/tokens';
+import { type as typeScale } from '../../theme/tokens';
+import { useTheme, withAlpha } from '../../theme/ThemeContext';
 
 /** Same relative-day helper as Phone.dc.html's `d(n)` — local "today" offset by n days, ISO date. */
 function relativeIso(n: number): string {
@@ -52,10 +53,14 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
+  const { palette, glass, mode, displayName, todoCollapsed, setTodoCollapsed } = useTheme();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<'new' | string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -72,11 +77,21 @@ export default function HomeScreen() {
   }, []);
 
   const userName = useMemo(() => {
+    const trimmedDisplay = displayName.trim();
+    if (trimmedDisplay) return trimmedDisplay;
     if (!userEmail) return 'there';
     const local = userEmail.split('@')[0];
     if (!local) return 'there';
     return local.charAt(0).toUpperCase() + local.slice(1);
-  }, [userEmail]);
+  }, [displayName, userEmail]);
+
+  /** Hour-based greeting: 5-11:59 morning, 12-17:59 afternoon, 18:00-4:59 evening. */
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
 
   const sortedTasks = useMemo(
     () => tasks.slice().sort((a, b) => taskOrder(a) - taskOrder(b)),
@@ -84,11 +99,6 @@ export default function HomeScreen() {
   );
 
   const openCount = useMemo(() => tasks.filter((t) => !t.done).length, [tasks]);
-
-  const dueSummary = useMemo(() => {
-    const dueSoon = tasks.filter((t) => !t.done && dueMeta(t.due_date).days <= 1).length;
-    return dueSoon > 0 ? `${dueSoon} due today or tomorrow` : 'nothing urgent today';
-  }, [tasks]);
 
   const dateStr = useMemo(
     () =>
@@ -108,115 +118,211 @@ export default function HomeScreen() {
     setNewDue(null);
   };
 
+  /** Opens the shared native DateTimePicker targeted at either the add-row ('new') or a
+   *  specific task id; on web, toggles that row's inline YYYY-MM-DD text editor instead. */
+  const openDatePicker = (target: 'new' | string, currentDue: string | null) => {
+    if (Platform.OS === 'web') {
+      setEditingTaskId((prev) => (prev === target ? null : target));
+      setEditingText(currentDue ?? '');
+      return;
+    }
+    setPickerTarget(target);
+    setShowPicker(true);
+  };
+
+  const pickerValue = useMemo(() => {
+    if (pickerTarget === 'new') return newDue ?? new Date();
+    if (pickerTarget) {
+      const t = tasks.find((x) => x.id === pickerTarget);
+      return t?.due_date ? new Date(`${t.due_date}T00:00:00`) : new Date();
+    }
+    return new Date();
+  }, [pickerTarget, newDue, tasks]);
+
   const handleDueChange = (event: DateTimePickerEvent, picked?: Date) => {
     setShowPicker(Platform.OS === 'ios');
     if (event.type === 'set' && picked) {
-      setNewDue(picked);
+      if (pickerTarget === 'new') {
+        setNewDue(picked);
+      } else if (pickerTarget) {
+        update(pickerTarget, { due_date: toIsoDate(picked) });
+      }
     }
     if (Platform.OS === 'android') {
       setShowPicker(false);
+      setPickerTarget(null);
     }
   };
 
-  const diag = accent.diagonal();
+  /** Commits the web inline date editor for a task row: valid YYYY-MM-DD sets the due
+   *  date, an emptied field clears it, anything else is discarded on close. */
+  const commitRowDate = (taskId: string) => {
+    const txt = editingText.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(txt)) {
+      update(taskId, { due_date: txt });
+    } else if (txt === '') {
+      update(taskId, { due_date: null });
+    }
+    setEditingTaskId(null);
+    setEditingText('');
+  };
+
+  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
+  const iconBtnBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  // Unchecked checkbox: border-white/30 + bg-white/5 (dark) — matches
+  // sampleindex.html's task checkboxes exactly.
+  const uncheckedBorder = mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)';
+  const uncheckedBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
 
   return (
     <AppShell>
       <View style={styles.header}>
-        <Text style={styles.greeting}>Good morning</Text>
-        <Text style={styles.name}>{userName}</Text>
-        <Text style={styles.dateLine}>
-          {dateStr} · {dueSummary}
-        </Text>
+        <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
+        <Text style={[styles.name, { color: palette.text.primary }]}>{userName}</Text>
+        <Text style={[styles.dateLine, { color: palette.text.secondary }]}>{dateStr}</Text>
+        <WeekStrip />
       </View>
 
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>To-Do</Text>
-          <Text style={styles.openCount}>{openCount} open</Text>
-        </View>
-
-        <View style={styles.addRow}>
-          <TextInput
-            value={newTitle}
-            onChangeText={setNewTitle}
-            onSubmitEditing={handleAddTask}
-            returnKeyType="done"
-            placeholder="Add a task…"
-            placeholderTextColor={color.text.quaternary}
-            style={styles.input}
-          />
-          {Platform.OS === 'web' ? (
-            <TextInput
-              value={newDue ? toIsoDate(newDue) : ''}
-              onChangeText={(txt) =>
-                setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
-              }
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={color.text.quaternary}
-              style={styles.webDueInput}
-            />
-          ) : (
-            <Pressable style={styles.dueTrigger} onPress={() => setShowPicker(true)}>
-              <Text style={styles.dueTriggerText}>{newDue ? fmt(toIsoDate(newDue)) : '📅'}</Text>
-            </Pressable>
-          )}
-          <Pressable onPress={handleAddTask}>
-            <LinearGradient
-              colors={diag.colors}
-              start={diag.start}
-              end={diag.end}
-              style={styles.addButton}
-            >
-              <Text style={styles.addButtonText}>+</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-
-        {showPicker && Platform.OS !== 'web' ? (
-          <DateTimePicker
-            value={newDue ?? new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            onChange={handleDueChange}
-          />
-        ) : null}
-
-        {sortedTasks.map((t) => (
-          <View key={t.id} style={styles.taskRow}>
+          <Text style={[styles.cardTitle, { color: palette.accentText }]}>To-Do</Text>
+          <View style={styles.cardHeaderRight}>
+            <Text style={[styles.openCount, { color: palette.text.quaternary }]}>{openCount} open</Text>
             <Pressable
-              onPress={() => update(t.id, { done: !t.done })}
-              style={styles.checkboxWrap}
+              onPress={() => setTodoCollapsed(!todoCollapsed)}
+              style={styles.collapseToggle}
+              accessibilityRole="button"
+              accessibilityLabel={todoCollapsed ? 'Expand to-do list' : 'Collapse to-do list'}
             >
-              {t.done ? (
-                <LinearGradient
-                  colors={diag.colors}
-                  start={diag.start}
-                  end={diag.end}
-                  style={styles.checkbox}
-                >
-                  <Text style={styles.checkmark}>✓</Text>
-                </LinearGradient>
-              ) : (
-                <View style={[styles.checkbox, styles.checkboxOff]} />
-              )}
-            </Pressable>
-
-            <Text
-              style={[styles.taskTitle, t.done && styles.taskTitleDone]}
-              numberOfLines={1}
-            >
-              {t.title}
-            </Text>
-
-            <UrgencyPill dueDate={t.due_date} done={t.done} />
-
-            <Pressable onPress={() => remove(t.id)} style={styles.removeWrap}>
-              <Text style={styles.removeGlyph}>×</Text>
+              <MaterialCommunityIcons
+                name={todoCollapsed ? 'chevron-down' : 'chevron-up'}
+                size={18}
+                color={palette.text.secondary}
+              />
             </Pressable>
           </View>
-        ))}
+        </View>
+
+        {todoCollapsed ? null : (
+          <>
+            <View style={styles.addRow}>
+              <TextInput
+                value={newTitle}
+                onChangeText={setNewTitle}
+                onSubmitEditing={handleAddTask}
+                returnKeyType="done"
+                placeholder="Add a task…"
+                placeholderTextColor={palette.text.quaternary}
+                style={[styles.input, inputStyle, { color: palette.text.primary }]}
+              />
+              {Platform.OS === 'web' ? (
+                <TextInput
+                  value={newDue ? toIsoDate(newDue) : ''}
+                  onChangeText={(txt) =>
+                    setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
+                  }
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={palette.text.quaternary}
+                  style={[styles.webDueInput, inputStyle, { color: palette.text.primary }]}
+                />
+              ) : (
+                <Pressable
+                  style={[styles.dueTrigger, inputStyle]}
+                  onPress={() => openDatePicker('new', newDue ? toIsoDate(newDue) : null)}
+                >
+                  <MaterialCommunityIcons
+                    name="calendar"
+                    size={16}
+                    color={newDue ? palette.accentText : palette.text.secondary}
+                  />
+                </Pressable>
+              )}
+              <Pressable
+                onPress={handleAddTask}
+                style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+                accessibilityRole="button"
+                accessibilityLabel="Add task"
+              >
+                <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
+              </Pressable>
+            </View>
+
+            {showPicker && Platform.OS !== 'web' ? (
+              <DateTimePicker
+                value={pickerValue}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={handleDueChange}
+              />
+            ) : null}
+
+            {sortedTasks.map((t) => (
+              <View key={t.id} style={[styles.taskRow, { borderTopColor: palette.hairline }]}>
+                <Pressable
+                  onPress={() => update(t.id, { done: !t.done })}
+                  style={styles.checkboxWrap}
+                >
+                  {t.done ? (
+                    <View
+                      style={[
+                        styles.checkbox,
+                        { borderColor: palette.accentText, backgroundColor: withAlpha(palette.accentText, 0.3) },
+                      ]}
+                    >
+                      <MaterialCommunityIcons name="check" size={16} color="#ffffff" />
+                    </View>
+                  ) : (
+                    <View style={[styles.checkbox, { backgroundColor: uncheckedBg, borderColor: uncheckedBorder }]} />
+                  )}
+                </Pressable>
+
+                <Text
+                  style={[
+                    styles.taskTitle,
+                    { color: palette.text.primaryAlt },
+                    t.done && [styles.taskTitleDone, { color: palette.text.dimmed }],
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t.title}
+                </Text>
+
+                {Platform.OS === 'web' && editingTaskId === t.id ? (
+                  <TextInput
+                    autoFocus
+                    value={editingText}
+                    onChangeText={setEditingText}
+                    onSubmitEditing={() => commitRowDate(t.id)}
+                    onBlur={() => commitRowDate(t.id)}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={palette.text.quaternary}
+                    style={[styles.rowDueInput, inputStyle, { color: palette.text.primary }]}
+                  />
+                ) : (
+                  <Pressable
+                    onPress={() => openDatePicker(t.id, t.due_date)}
+                    style={styles.rowCalendarWrap}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.due_date ? `Due date ${t.due_date}` : 'Set due date'}
+                  >
+                    <MaterialCommunityIcons
+                      name="calendar"
+                      size={16}
+                      color={t.due_date ? palette.accentText : palette.text.faint}
+                    />
+                  </Pressable>
+                )}
+
+                <Pressable onPress={() => remove(t.id)} style={styles.removeWrap}>
+                  <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
+                </Pressable>
+              </View>
+            ))}
+          </>
+        )}
       </GlassCard>
+
+      <HabitTrackerCard />
     </AppShell>
   );
 }
@@ -230,19 +336,16 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: typeScale.greetingLabel.fontSize,
     fontWeight: typeScale.greetingLabel.fontWeight,
-    color: '#4a4558',
   },
   name: {
     fontSize: typeScale.greetingName.fontSize,
     fontWeight: typeScale.greetingName.fontWeight,
     letterSpacing: typeScale.greetingName.letterSpacing,
-    color: color.text.primary,
     marginTop: 2,
     lineHeight: 46,
   },
   dateLine: {
     fontSize: typeScale.body.fontSize,
-    color: color.text.secondary,
     marginTop: 8,
   },
   card: {
@@ -255,15 +358,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 12,
   },
+  // Small accent-colored uppercase label with wide tracking — matches
+  // sampleindex.html's "TODAY'S TASKS" section label treatment exactly (text-primary,
+  // font-bold, tracking-widest, uppercase, ~12px). Text itself stays "To-Do".
   cardTitle: {
-    fontSize: typeScale.cardTitleLg.fontSize,
-    fontWeight: typeScale.cardTitleLg.fontWeight,
-    color: color.text.primaryAlt,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   openCount: {
     fontSize: typeScale.metaMedium.fontSize,
     fontWeight: typeScale.metaMedium.fontWeight,
-    color: color.text.quaternary,
+  },
+  collapseToggle: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addRow: {
     flexDirection: 'row',
@@ -274,14 +391,11 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
     fontSize: 15,
-    color: color.text.primary,
   },
   dueTrigger: {
     flexBasis: 44,
@@ -289,41 +403,27 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 6,
-  },
-  dueTriggerText: {
-    fontSize: 13,
-    color: color.text.secondary,
   },
   webDueInput: {
     flexBasis: 120,
     flexGrow: 0,
     flexShrink: 0,
-    backgroundColor: 'rgba(255,255,255,0.22)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 10,
     fontSize: 13,
-    color: color.text.primary,
   },
   addButton: {
     width: 42,
     height: 42,
-    borderRadius: 14,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '600',
   },
   taskRow: {
     flexDirection: 'row',
@@ -332,40 +432,48 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 6,
     borderTopWidth: 1,
-    borderTopColor: color.hairline,
   },
   checkboxWrap: {
     flexBasis: 24,
     flexGrow: 0,
     flexShrink: 0,
   },
+  // 24px box, rounded-lg (8px), border-2 — matches sampleindex.html's checkboxes exactly.
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 8,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  checkboxOff: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
   },
   taskTitle: {
     flex: 1,
     minWidth: 0,
     fontSize: typeScale.itemTitleMedium.fontSize,
     fontWeight: typeScale.itemTitleMedium.fontWeight,
-    color: color.text.primaryAlt,
   },
   taskTitleDone: {
-    color: color.text.dimmed,
     textDecorationLine: 'line-through',
+  },
+  rowCalendarWrap: {
+    flexBasis: 22,
+    flexGrow: 0,
+    flexShrink: 0,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowDueInput: {
+    flexBasis: 110,
+    flexGrow: 0,
+    flexShrink: 0,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    fontSize: 12,
   },
   removeWrap: {
     flexBasis: 22,
@@ -377,7 +485,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removeGlyph: {
-    color: color.text.faint,
     fontSize: 16,
     lineHeight: 16,
   },

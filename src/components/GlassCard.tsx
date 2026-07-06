@@ -1,43 +1,48 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { glass } from '../theme/tokens';
+import { useTheme } from '../theme/ThemeContext';
+import { radius } from '../theme/tokens';
 
 type Props = {
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   /** Override inner content padding (default matches HANDOFF card padding 16-18px). */
   contentStyle?: StyleProp<ViewStyle>;
-  /** Override the corner radius (default = HANDOFF card 28px; e.g. 24 for inventory cards). */
+  /** Override the corner radius (default = sampleindex.html's rounded-3xl, 24px). */
   radius?: number;
 };
 
 /**
- * Translucent frosted-glass card per HANDOFF's "Card" recipe:
- * rgba(255,255,255,0.16) tint, blur(34) saturate(1.9), 1px rgba(255,255,255,0.4) border,
- * 28px radius, soft purple drop shadow + inset highlight.
+ * Real frosted liquid-glass card: BlurView backdrop blur, neutral translucent fill, and a
+ * flat 1px border (`border border-white/10` in the reference) — no specular gradient.
+ * A prior pass here used a bright top-left -> faint bottom-right LinearGradient border;
+ * sampleindex.html has no visible specular highlight, just a uniform hairline, so that
+ * effect was simplified away.
  */
-export function GlassCard({ children, style, contentStyle, radius }: Props) {
-  const g = glass.card;
-  const borderRadius = radius ?? g.borderRadius;
+export function GlassCard({ children, style, contentStyle, radius: radiusOverride }: Props) {
+  const { glass } = useTheme();
+  const borderRadius = radiusOverride ?? radius.card;
+
   return (
     <View
       style={[
         {
           borderRadius,
-          shadowColor: g.shadowColor,
-          shadowOpacity: g.shadowOpacity,
-          shadowRadius: g.shadowRadius,
-          shadowOffset: g.shadowOffset,
+          shadowColor: 'rgba(0,0,0,0.28)',
+          shadowOpacity: 1,
+          shadowRadius: 30,
+          shadowOffset: { width: 0, height: 12 },
           elevation: 6,
         },
         style,
       ]}
     >
-      <View style={[styles.clip, { borderRadius, borderColor: g.borderColor, borderWidth: g.borderWidth }]}>
-        <BlurView intensity={g.intensity} tint={g.tint} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: g.backgroundColor }]} />
-        <View style={styles.topHighlight} />
+      <View
+        style={[styles.clip, { borderRadius, borderWidth: 1, borderColor: glass.borderBase }]}
+      >
+        <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
         <View style={[styles.content, contentStyle]}>{children}</View>
       </View>
     </View>
@@ -47,14 +52,6 @@ export function GlassCard({ children, style, contentStyle, radius }: Props) {
 const styles = StyleSheet.create({
   clip: {
     overflow: 'hidden',
-  },
-  topHighlight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   content: {
     padding: 16,
