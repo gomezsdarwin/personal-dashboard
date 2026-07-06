@@ -8,13 +8,14 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
 import { HeaderBar } from '../../components/HeaderBar';
-import { UrgencyPill } from '../../components/UrgencyPill';
+import { WeekStrip } from '../../components/WeekStrip';
 import { useRepo } from '../../hooks/useRepo';
-import { dueMeta, fmt } from '../../lib/dueDate';
+import { dueMeta } from '../../lib/dueDate';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { NewRow, TaskRow } from '../../lib/types';
 import { accent } from '../../theme/accent';
@@ -54,11 +55,14 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
-  const { palette, glass } = useTheme();
+  const { palette, glass, displayName, todoCollapsed, setTodoCollapsed } = useTheme();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<'new' | string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -75,11 +79,21 @@ export default function HomeScreen() {
   }, []);
 
   const userName = useMemo(() => {
+    const trimmedDisplay = displayName.trim();
+    if (trimmedDisplay) return trimmedDisplay;
     if (!userEmail) return 'there';
     const local = userEmail.split('@')[0];
     if (!local) return 'there';
     return local.charAt(0).toUpperCase() + local.slice(1);
-  }, [userEmail]);
+  }, [displayName, userEmail]);
+
+  /** Hour-based greeting: 5-11:59 morning, 12-17:59 afternoon, 18:00-4:59 evening. */
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
 
   const sortedTasks = useMemo(
     () => tasks.slice().sort((a, b) => taskOrder(a) - taskOrder(b)),
@@ -87,11 +101,6 @@ export default function HomeScreen() {
   );
 
   const openCount = useMemo(() => tasks.filter((t) => !t.done).length, [tasks]);
-
-  const dueSummary = useMemo(() => {
-    const dueSoon = tasks.filter((t) => !t.done && dueMeta(t.due_date).days <= 1).length;
-    return dueSoon > 0 ? `${dueSoon} due today or tomorrow` : 'nothing urgent today';
-  }, [tasks]);
 
   const dateStr = useMemo(
     () =>
@@ -111,14 +120,53 @@ export default function HomeScreen() {
     setNewDue(null);
   };
 
+  /** Opens the shared native DateTimePicker targeted at either the add-row ('new') or a
+   *  specific task id; on web, toggles that row's inline YYYY-MM-DD text editor instead. */
+  const openDatePicker = (target: 'new' | string, currentDue: string | null) => {
+    if (Platform.OS === 'web') {
+      setEditingTaskId((prev) => (prev === target ? null : target));
+      setEditingText(currentDue ?? '');
+      return;
+    }
+    setPickerTarget(target);
+    setShowPicker(true);
+  };
+
+  const pickerValue = useMemo(() => {
+    if (pickerTarget === 'new') return newDue ?? new Date();
+    if (pickerTarget) {
+      const t = tasks.find((x) => x.id === pickerTarget);
+      return t?.due_date ? new Date(`${t.due_date}T00:00:00`) : new Date();
+    }
+    return new Date();
+  }, [pickerTarget, newDue, tasks]);
+
   const handleDueChange = (event: DateTimePickerEvent, picked?: Date) => {
     setShowPicker(Platform.OS === 'ios');
     if (event.type === 'set' && picked) {
-      setNewDue(picked);
+      if (pickerTarget === 'new') {
+        setNewDue(picked);
+      } else if (pickerTarget) {
+        update(pickerTarget, { due_date: toIsoDate(picked) });
+      }
     }
     if (Platform.OS === 'android') {
       setShowPicker(false);
+      setPickerTarget(null);
     }
+  };
+
+  /** Commits the web inline date editor for a task row: valid YYYY-MM-DD sets the due
+   *  date, an emptied field clears it, anything else is discarded on close. */
+  const commitRowDate = (taskId: string) => {
+    const txt = editingText.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(txt)) {
+      update(taskId, { due_date: txt });
+    } else if (txt === '') {
+      update(taskId, { due_date: null });
+    }
+    setEditingTaskId(null);
+    setEditingText('');
   };
 
   const diag = accent.diagonal();
@@ -130,106 +178,154 @@ export default function HomeScreen() {
       <HeaderBar />
 
       <View style={styles.header}>
-        <Text style={[styles.greeting, { color: palette.text.secondary }]}>Good morning</Text>
+        <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
         <Text style={[styles.name, { color: palette.text.primary }]}>{userName}</Text>
-        <Text style={[styles.dateLine, { color: palette.text.secondary }]}>
-          {dateStr} · {dueSummary}
-        </Text>
+        <Text style={[styles.dateLine, { color: palette.text.secondary }]}>{dateStr}</Text>
+        <WeekStrip />
       </View>
 
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <Text style={[styles.cardTitle, { color: palette.text.primaryAlt }]}>To-Do</Text>
-          <Text style={[styles.openCount, { color: palette.text.quaternary }]}>{openCount} open</Text>
-        </View>
-
-        <View style={styles.addRow}>
-          <TextInput
-            value={newTitle}
-            onChangeText={setNewTitle}
-            onSubmitEditing={handleAddTask}
-            returnKeyType="done"
-            placeholder="Add a task…"
-            placeholderTextColor={palette.text.quaternary}
-            style={[styles.input, inputStyle, { color: palette.text.primary }]}
-          />
-          {Platform.OS === 'web' ? (
-            <TextInput
-              value={newDue ? toIsoDate(newDue) : ''}
-              onChangeText={(txt) =>
-                setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
-              }
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={palette.text.quaternary}
-              style={[styles.webDueInput, inputStyle, { color: palette.text.primary }]}
-            />
-          ) : (
-            <Pressable style={[styles.dueTrigger, inputStyle]} onPress={() => setShowPicker(true)}>
-              <Text style={[styles.dueTriggerText, { color: palette.text.secondary }]}>
-                {newDue ? fmt(toIsoDate(newDue)) : '📅'}
-              </Text>
-            </Pressable>
-          )}
-          <Pressable onPress={handleAddTask}>
-            <LinearGradient
-              colors={diag.colors}
-              start={diag.start}
-              end={diag.end}
-              style={styles.addButton}
-            >
-              <Text style={styles.addButtonText}>+</Text>
-            </LinearGradient>
-          </Pressable>
-        </View>
-
-        {showPicker && Platform.OS !== 'web' ? (
-          <DateTimePicker
-            value={newDue ?? new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            onChange={handleDueChange}
-          />
-        ) : null}
-
-        {sortedTasks.map((t) => (
-          <View key={t.id} style={[styles.taskRow, { borderTopColor: palette.hairline }]}>
+          <View style={styles.cardHeaderRight}>
+            <Text style={[styles.openCount, { color: palette.text.quaternary }]}>{openCount} open</Text>
             <Pressable
-              onPress={() => update(t.id, { done: !t.done })}
-              style={styles.checkboxWrap}
+              onPress={() => setTodoCollapsed(!todoCollapsed)}
+              style={styles.collapseToggle}
+              accessibilityRole="button"
+              accessibilityLabel={todoCollapsed ? 'Expand to-do list' : 'Collapse to-do list'}
             >
-              {t.done ? (
+              <Feather
+                name={todoCollapsed ? 'chevron-down' : 'chevron-up'}
+                size={18}
+                color={palette.text.secondary}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        {todoCollapsed ? null : (
+          <>
+            <View style={styles.addRow}>
+              <TextInput
+                value={newTitle}
+                onChangeText={setNewTitle}
+                onSubmitEditing={handleAddTask}
+                returnKeyType="done"
+                placeholder="Add a task…"
+                placeholderTextColor={palette.text.quaternary}
+                style={[styles.input, inputStyle, { color: palette.text.primary }]}
+              />
+              {Platform.OS === 'web' ? (
+                <TextInput
+                  value={newDue ? toIsoDate(newDue) : ''}
+                  onChangeText={(txt) =>
+                    setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
+                  }
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={palette.text.quaternary}
+                  style={[styles.webDueInput, inputStyle, { color: palette.text.primary }]}
+                />
+              ) : (
+                <Pressable
+                  style={[styles.dueTrigger, inputStyle]}
+                  onPress={() => openDatePicker('new', newDue ? toIsoDate(newDue) : null)}
+                >
+                  <Feather
+                    name="calendar"
+                    size={16}
+                    color={newDue ? palette.accentText : palette.text.secondary}
+                  />
+                </Pressable>
+              )}
+              <Pressable onPress={handleAddTask}>
                 <LinearGradient
                   colors={diag.colors}
                   start={diag.start}
                   end={diag.end}
-                  style={styles.checkbox}
+                  style={styles.addButton}
                 >
-                  <Text style={styles.checkmark}>✓</Text>
+                  <Text style={styles.addButtonText}>+</Text>
                 </LinearGradient>
-              ) : (
-                <View style={[styles.checkbox, styles.checkboxOff, { borderColor: glass.borderElevated }]} />
-              )}
-            </Pressable>
+              </Pressable>
+            </View>
 
-            <Text
-              style={[
-                styles.taskTitle,
-                { color: palette.text.primaryAlt },
-                t.done && [styles.taskTitleDone, { color: palette.text.dimmed }],
-              ]}
-              numberOfLines={1}
-            >
-              {t.title}
-            </Text>
+            {showPicker && Platform.OS !== 'web' ? (
+              <DateTimePicker
+                value={pickerValue}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={handleDueChange}
+              />
+            ) : null}
 
-            <UrgencyPill dueDate={t.due_date} done={t.done} />
+            {sortedTasks.map((t) => (
+              <View key={t.id} style={[styles.taskRow, { borderTopColor: palette.hairline }]}>
+                <Pressable
+                  onPress={() => update(t.id, { done: !t.done })}
+                  style={styles.checkboxWrap}
+                >
+                  {t.done ? (
+                    <LinearGradient
+                      colors={diag.colors}
+                      start={diag.start}
+                      end={diag.end}
+                      style={styles.checkbox}
+                    >
+                      <Text style={styles.checkmark}>✓</Text>
+                    </LinearGradient>
+                  ) : (
+                    <View style={[styles.checkbox, styles.checkboxOff, { borderColor: glass.borderElevated }]} />
+                  )}
+                </Pressable>
 
-            <Pressable onPress={() => remove(t.id)} style={styles.removeWrap}>
-              <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
-            </Pressable>
-          </View>
-        ))}
+                <Text
+                  style={[
+                    styles.taskTitle,
+                    { color: palette.text.primaryAlt },
+                    t.done && [styles.taskTitleDone, { color: palette.text.dimmed }],
+                  ]}
+                  numberOfLines={1}
+                >
+                  {t.title}
+                </Text>
+
+                {Platform.OS === 'web' && editingTaskId === t.id ? (
+                  <TextInput
+                    autoFocus
+                    value={editingText}
+                    onChangeText={setEditingText}
+                    onSubmitEditing={() => commitRowDate(t.id)}
+                    onBlur={() => commitRowDate(t.id)}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={palette.text.quaternary}
+                    style={[styles.rowDueInput, inputStyle, { color: palette.text.primary }]}
+                  />
+                ) : (
+                  <Pressable
+                    onPress={() => openDatePicker(t.id, t.due_date)}
+                    style={styles.rowCalendarWrap}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.due_date ? `Due date ${t.due_date}` : 'Set due date'}
+                  >
+                    <Feather
+                      name="calendar"
+                      size={16}
+                      color={t.due_date ? palette.accentText : palette.text.faint}
+                    />
+                  </Pressable>
+                )}
+
+                <Pressable onPress={() => remove(t.id)} style={styles.removeWrap}>
+                  <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
+                </Pressable>
+              </View>
+            ))}
+          </>
+        )}
       </GlassCard>
+
+      {/* Phase 5 inserts a HabitTrackerCard here, as a sibling GlassCard below To-Do. */}
     </AppShell>
   );
 }
@@ -269,9 +365,20 @@ const styles = StyleSheet.create({
     fontSize: typeScale.cardTitleLg.fontSize,
     fontWeight: typeScale.cardTitleLg.fontWeight,
   },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   openCount: {
     fontSize: typeScale.metaMedium.fontSize,
     fontWeight: typeScale.metaMedium.fontWeight,
+  },
+  collapseToggle: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addRow: {
     flexDirection: 'row',
@@ -298,9 +405,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 6,
-  },
-  dueTriggerText: {
-    fontSize: 13,
   },
   webDueInput: {
     flexBasis: 120,
@@ -361,6 +465,25 @@ const styles = StyleSheet.create({
   },
   taskTitleDone: {
     textDecorationLine: 'line-through',
+  },
+  rowCalendarWrap: {
+    flexBasis: 22,
+    flexGrow: 0,
+    flexShrink: 0,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowDueInput: {
+    flexBasis: 110,
+    flexGrow: 0,
+    flexShrink: 0,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    fontSize: 12,
   },
   removeWrap: {
     flexBasis: 22,

@@ -13,6 +13,7 @@ type PersistedSettings = {
   glassTint: string;
   artworkId: string;
   displayName: string;
+  todoCollapsed: boolean;
 };
 
 const DEFAULTS: PersistedSettings = {
@@ -21,6 +22,7 @@ const DEFAULTS: PersistedSettings = {
   glassTint: '#ffffff',
   artworkId: defaultArtworkId,
   displayName: '',
+  todoCollapsed: false,
 };
 
 /** Concrete, ready-to-use glass style values derived from the current theme state. */
@@ -56,6 +58,8 @@ export type ThemeContextValue = {
   setArtworkId: (value: string) => void;
   displayName: string;
   setDisplayName: (value: string) => void;
+  todoCollapsed: boolean;
+  setTodoCollapsed: (value: boolean) => void;
   palette: Palette;
   glass: GlassRecipe;
 };
@@ -111,13 +115,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [glassTint, setGlassTint] = useState<string>(DEFAULTS.glassTint);
   const [artworkId, setArtworkId] = useState<string>(DEFAULTS.artworkId);
   const [displayName, setDisplayName] = useState<string>(DEFAULTS.displayName);
+  const [todoCollapsed, setTodoCollapsed] = useState<boolean>(DEFAULTS.todoCollapsed);
 
   // Load persisted settings on mount. AsyncStorage is inherently async, so a first-frame
   // flash of the default (dark) theme before a persisted light-mode preference loads is
   // possible — acceptable for this phase per the Phase 2 spec.
-  // Older persisted blobs (pre-Phase-3) won't have artworkId/displayName keys — parsed
-  // fields are read individually and missing ones simply keep the useState default above,
-  // so upgrading in place doesn't clobber previously-persisted opacity/mode/tint.
+  // Older persisted blobs (pre-Phase-3/4) won't have artworkId/displayName/todoCollapsed
+  // keys — parsed fields are read individually and missing ones simply keep the useState
+  // default above, so upgrading in place doesn't clobber previously-persisted opacity/mode/tint.
   useEffect(() => {
     let cancelled = false;
     AsyncStorage.getItem(STORAGE_KEY)
@@ -129,6 +134,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (typeof parsed.glassTint === 'string') setGlassTint(parsed.glassTint);
         if (typeof parsed.artworkId === 'string') setArtworkId(parsed.artworkId);
         if (typeof parsed.displayName === 'string') setDisplayName(parsed.displayName);
+        if (typeof parsed.todoCollapsed === 'boolean') setTodoCollapsed(parsed.todoCollapsed);
       })
       .catch(() => {
         // Corrupt/unavailable storage — fall back to defaults silently.
@@ -141,11 +147,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Persist on every change (after initial load), so the toggle used for QA and any future
   // Settings UI both stick across reloads.
   useEffect(() => {
-    const payload: PersistedSettings = { mode, glassOpacity, glassTint, artworkId, displayName };
+    const payload: PersistedSettings = {
+      mode,
+      glassOpacity,
+      glassTint,
+      artworkId,
+      displayName,
+      todoCollapsed,
+    };
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(payload)).catch(() => {
       // Best-effort persistence; ignore failures (e.g. storage unavailable).
     });
-  }, [mode, glassOpacity, glassTint, artworkId, displayName]);
+  }, [mode, glassOpacity, glassTint, artworkId, displayName, todoCollapsed]);
 
   const value = useMemo<ThemeContextValue>(() => {
     return {
@@ -159,10 +172,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setArtworkId,
       displayName,
       setDisplayName,
+      todoCollapsed,
+      setTodoCollapsed,
       palette: palettes[mode],
       glass: buildGlass(mode, glassOpacity, glassTint),
     };
-  }, [mode, glassOpacity, glassTint, artworkId, displayName]);
+  }, [mode, glassOpacity, glassTint, artworkId, displayName, todoCollapsed]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
