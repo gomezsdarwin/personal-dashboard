@@ -1,21 +1,29 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTheme } from '../theme/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme, withAlpha } from '../theme/ThemeContext';
 import { accent } from '../theme/accent';
-import { radius } from '../theme/tokens';
 import { SettingsSheet } from './SettingsSheet';
 
+/** Content height below the safe-area inset — matches sampleindex.html's `h-16` (64px). */
+export const HEADER_CONTENT_HEIGHT = 64;
+
 /**
- * Reusable top row: small avatar (initial from displayName, or a generic person glyph)
- * on the left, bell (decorative) + gear (opens Settings) on the right. Mounted on Home
- * this phase; Phase 6 adds it to the other 3 tabs. Phase 4 owns Home's full greeting
- * layout — this component intentionally stays simple (avatar+name row, icons row) so it
- * can be dropped into any screen without assuming surrounding layout.
+ * Fixed, full-width frosted header bar — mounted once by AppShell (not per-screen), so it
+ * stays pinned above the scrolling content exactly like sampleindex.html's
+ * `<header class="fixed top-0 w-full ... bg-black/40 backdrop-blur-[80px]
+ * border-b border-white/10">`. Left: avatar (+ optional display name). Right: bell +
+ * settings gear, both styled as identical `bg-white/5` circle buttons — the reference
+ * mock only shows a bell, but a settings entry point is load-bearing app functionality
+ * (theme/opacity/artwork/name live there), so it's kept and styled to match the bell
+ * rather than standing out as a mismatched addition.
  */
 export function HeaderBar() {
-  const { palette, glass, displayName } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { palette, glass, mode, displayName } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const initial = useMemo(() => {
@@ -24,6 +32,7 @@ export function HeaderBar() {
   }, [displayName]);
 
   const diag = accent.diagonal();
+  const iconBtnBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
 
   const handleBellPress = () => {
     // Decorative for now — no real notifications this phase.
@@ -32,39 +41,58 @@ export function HeaderBar() {
 
   return (
     <>
-      <View style={styles.row}>
-        <View style={styles.identity}>
-          <LinearGradient colors={diag.colors} start={diag.start} end={diag.end} style={styles.avatar}>
-            {initial ? (
-              <Text style={styles.avatarInitial}>{initial}</Text>
-            ) : (
-              <Feather name="user" size={18} color="#fff" />
-            )}
-          </LinearGradient>
-          {displayName.trim() ? (
-            <Text style={[styles.name, { color: palette.text.primary }]} numberOfLines={1}>
-              {displayName.trim()}
-            </Text>
-          ) : null}
-        </View>
+      <View
+        style={[
+          styles.wrapper,
+          {
+            height: insets.top + HEADER_CONTENT_HEIGHT,
+            paddingTop: insets.top,
+            borderBottomColor: glass.borderBase,
+          },
+        ]}
+      >
+        <BlurView intensity={glass.blurIntensityHeader} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fillHeader }]} />
 
-        <View style={styles.icons}>
-          <Pressable
-            onPress={handleBellPress}
-            style={[styles.iconButton, { backgroundColor: glass.fill, borderColor: glass.borderBase }]}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <Feather name="bell" size={18} color={palette.text.primary} />
-          </Pressable>
-          <Pressable
-            onPress={() => setSettingsOpen(true)}
-            style={[styles.iconButton, { backgroundColor: glass.fill, borderColor: glass.borderBase }]}
-            accessibilityRole="button"
-            accessibilityLabel="Settings"
-          >
-            <Feather name="settings" size={18} color={palette.text.primary} />
-          </Pressable>
+        <View style={styles.row}>
+          <View style={styles.identity}>
+            <LinearGradient
+              colors={diag.colors}
+              start={diag.start}
+              end={diag.end}
+              style={[styles.avatar, { borderColor: withAlpha(palette.accentText, 0.4) }]}
+            >
+              {initial ? (
+                <Text style={styles.avatarInitial}>{initial}</Text>
+              ) : (
+                <MaterialCommunityIcons name="account" size={20} color="#fff" />
+              )}
+            </LinearGradient>
+            {displayName.trim() ? (
+              <Text style={[styles.name, { color: palette.text.primary }]} numberOfLines={1}>
+                {displayName.trim()}
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={styles.icons}>
+            <Pressable
+              onPress={handleBellPress}
+              style={[styles.iconButton, { backgroundColor: iconBtnBg }]}
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
+            >
+              <MaterialCommunityIcons name="bell" size={20} color={palette.text.primary} />
+            </Pressable>
+            <Pressable
+              onPress={() => setSettingsOpen(true)}
+              style={[styles.iconButton, { backgroundColor: iconBtnBg }]}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <MaterialCommunityIcons name="cog-outline" size={20} color={palette.text.primary} />
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -74,11 +102,20 @@ export function HeaderBar() {
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    borderBottomWidth: 1,
+  },
   row: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
+    paddingHorizontal: 16,
   },
   identity: {
     flexDirection: 'row',
@@ -88,15 +125,16 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarInitial: {
     color: '#fff',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
   },
   name: {
@@ -109,10 +147,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   iconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.chip,
-    borderWidth: 1,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },

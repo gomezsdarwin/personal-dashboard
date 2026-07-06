@@ -3,7 +3,6 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
 import { GlassChip } from '../../components/GlassChip';
-import { HeaderBar } from '../../components/HeaderBar';
 import { HeroCard } from '../../components/HeroCard';
 import { UrgencyPill } from '../../components/UrgencyPill';
 import { useRepo } from '../../hooks/useRepo';
@@ -89,8 +88,6 @@ export default function FinanceScreen() {
 
   return (
     <AppShell>
-      <HeaderBar />
-
       <View style={styles.header}>
         <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Finance</Text>
         <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Subscriptions</Text>

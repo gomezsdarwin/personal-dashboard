@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Feather } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Svg } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fmt } from '../../lib/dueDate';
@@ -87,7 +87,7 @@ export function HabitStatsModal({
             <View style={styles.headerRow}>
               <Text style={[styles.title, { color: palette.text.primary }]}>Habit history</Text>
               <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close habit history">
-                <Feather name="x" size={22} color={palette.text.secondary} />
+                <MaterialCommunityIcons name="close" size={22} color={palette.text.secondary} />
               </Pressable>
             </View>
 

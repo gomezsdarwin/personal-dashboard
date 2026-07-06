@@ -1,20 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GlassCard } from '../../components/GlassCard';
 import { useRepo } from '../../hooks/useRepo';
 import type { HabitRow, NewRow } from '../../lib/types';
 import { toIsoDate, weekDayIsos, weekStartIso } from '../../lib/week';
-import { accent } from '../../theme/accent';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { HabitStatsModal } from './HabitStatsModal';
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-const CELL = 28;
-const CELL_GAP = 7;
+// 16x16, matching sampleindex.html's `.habit-square` exactly (much smaller than the
+// previous 28x28 — the reference's cells read as compact indicator dots, not buttons).
+const CELL = 16;
+const CELL_GAP = 8;
 
 /** First-run sample habits, one marked favorite so the "favorites sort to top" rule is visible. */
 const seedHabits: NewRow<HabitRow>[] = [
@@ -33,7 +33,7 @@ function completionKeyOf(habitId: string, iso: string): string {
 }
 
 export function HabitTrackerCard() {
-  const { palette, glass } = useTheme();
+  const { palette, glass, mode } = useTheme();
   const { rows: habits, insert: insertHabit, update: updateHabit, remove: removeHabit } = useRepo(
     'habits',
     seedHabits
@@ -63,8 +63,12 @@ export function HabitTrackerCard() {
     [completions]
   );
 
-  const diag = accent.diagonal();
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
+  const iconBtnBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  // Inactive habit cell: bg-white/10 + border-white/20 (dark), matching
+  // sampleindex.html's `.habit-square` exactly.
+  const cellInactiveBg = mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+  const cellInactiveBorder = mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.16)';
 
   const handleAddHabit = () => {
     const name = newHabitName.trim();
@@ -119,14 +123,14 @@ export function HabitTrackerCard() {
     <>
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>HABIT TRACKER</Text>
+          <Text style={[styles.cardTitle, { color: palette.accentText }]}>HABIT TRACKER</Text>
           <Pressable
             onPress={openStats}
             style={styles.statsButton}
             accessibilityRole="button"
             accessibilityLabel="View habit history chart"
           >
-            <Feather name="bar-chart-2" size={18} color={palette.text.secondary} />
+            <MaterialCommunityIcons name="chart-line" size={20} color={palette.accentText} />
           </Pressable>
         </View>
 
@@ -180,7 +184,7 @@ export function HabitTrackerCard() {
                 accessibilityRole="button"
                 accessibilityLabel={habit.favorite ? 'Unfavorite habit' : 'Favorite habit'}
               >
-                <Ionicons
+                <MaterialCommunityIcons
                   name={habit.favorite ? 'star' : 'star-outline'}
                   size={17}
                   color={habit.favorite ? palette.warning : palette.text.faint}
@@ -202,17 +206,21 @@ export function HabitTrackerCard() {
                       accessibilityLabel={`${habit.name} on ${iso}${isFuture ? ' (future, disabled)' : completed ? ', completed' : ', not completed'}`}
                     >
                       {completed ? (
-                        <LinearGradient
-                          colors={diag.colors}
-                          start={diag.start}
-                          end={diag.end}
-                          style={styles.cellFill}
+                        <View
+                          style={[
+                            styles.cellFill,
+                            {
+                              backgroundColor: palette.accentText,
+                              borderColor: palette.accentText,
+                              shadowColor: palette.accentText,
+                            },
+                          ]}
                         />
                       ) : (
                         <View
                           style={[
                             styles.cellHollow,
-                            { backgroundColor: glass.fill, borderColor: glass.borderElevated },
+                            { backgroundColor: cellInactiveBg, borderColor: cellInactiveBorder },
                           ]}
                         />
                       )}
@@ -234,10 +242,13 @@ export function HabitTrackerCard() {
             placeholderTextColor={palette.text.quaternary}
             style={[styles.input, inputStyle, { color: palette.text.primary }]}
           />
-          <Pressable onPress={handleAddHabit}>
-            <LinearGradient colors={diag.colors} start={diag.start} end={diag.end} style={styles.addButton}>
-              <Text style={styles.addButtonText}>+</Text>
-            </LinearGradient>
+          <Pressable
+            onPress={handleAddHabit}
+            style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+            accessibilityRole="button"
+            accessibilityLabel="Add habit"
+          >
+            <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
           </Pressable>
         </View>
       </GlassCard>
@@ -265,10 +276,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 12,
   },
+  // Small accent-colored uppercase label with wide tracking — matches
+  // sampleindex.html's "HABIT TRACKER" section label treatment exactly.
   cardTitle: {
     fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 1.2,
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
   },
   statsButton: {
     width: 24,
@@ -338,16 +352,24 @@ const styles = StyleSheet.create({
   cellFuture: {
     opacity: 0.32,
   },
+  // Solid accent fill + soft glow — approximates the reference's
+  // `box-shadow: 0 0 10px rgba(173,199,255,0.4)` via RN shadow props (renders on both
+  // iOS and web; `elevation` gives Android a comparable soft halo).
   cellFill: {
     width: '100%',
     height: '100%',
-    borderRadius: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
   },
   cellHollow: {
     width: '100%',
     height: '100%',
-    borderRadius: 8,
-    borderWidth: 2,
+    borderRadius: 4,
+    borderWidth: 1,
   },
   addRow: {
     flexDirection: 'row',
@@ -367,14 +389,9 @@ const styles = StyleSheet.create({
   addButton: {
     width: 42,
     height: 42,
-    borderRadius: 14,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '600',
   },
 });
 

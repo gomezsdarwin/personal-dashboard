@@ -67,7 +67,8 @@ export const spacing = {
 } as const;
 
 export const radius = {
-  card: 28,
+  // 24px (Tailwind's rounded-3xl) — matches sampleindex.html's glass cards exactly.
+  card: 24,
   chip: 20,
   tabBar: 30,
   input: 14,

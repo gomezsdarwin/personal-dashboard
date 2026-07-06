@@ -34,20 +34,25 @@ export type Palette = {
   scrim: string;
 };
 
+// Dark palette values lifted verbatim from sampleindex.html's Tailwind color config
+// (Material 3-style token names in the mock: on-surface, on-surface-variant, outline,
+// outline-variant, primary). Mapped onto our Palette shape's text scale below.
 export const dark: Palette = {
   text: {
-    primary: '#e8ecf4',
-    primaryAlt: '#dbe0ec',
-    secondary: '#aab2c8',
-    secondaryAlt: '#9aa2ba',
-    tertiary: '#848da8',
-    quaternary: '#6d7692',
-    dimmed: '#5a637c',
-    faint: '#4a5268',
+    primary: '#e0e3e5', // on-surface
+    primaryAlt: '#e0e3e5', // on-surface
+    secondary: '#c1c6d7', // on-surface-variant
+    secondaryAlt: '#b0b6c9', // interpolated between on-surface-variant and outline
+    tertiary: '#8b90a0', // outline
+    quaternary: '#767b8c', // dimmer than outline
+    dimmed: '#5c6170',
+    faint: '#414754', // outline-variant
   },
-  hairline: 'rgba(232,236,244,0.14)',
-  track: 'rgba(232,236,244,0.16)',
-  accentText: '#b9a8ff',
+  hairline: 'rgba(65,71,84,0.5)', // outline-variant at partial alpha
+  track: 'rgba(65,71,84,0.6)',
+  // Periwinkle-blue accent from the reference — labels/icons/active states ONLY,
+  // never the card fill tint (that's neutral black, see ThemeContext's buildGlass).
+  accentText: '#adc7ff',
   success: '#5fd98a',
   successBg: 'rgba(52,199,89,0.20)',
   successBorder: 'rgba(52,199,89,0.38)',
@@ -56,7 +61,8 @@ export const dark: Palette = {
   dangerBorder: 'rgba(255,59,72,0.38)',
   warning: '#ffd166',
   warningBg: 'rgba(255,196,20,0.22)',
-  scrim: 'rgba(5,10,20,0.4)',
+  // Matches the reference's fixed `bg-black/40` scrim layer over the background artwork.
+  scrim: 'rgba(0,0,0,0.4)',
 };
 
 export const light: Palette = {

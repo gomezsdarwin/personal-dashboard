@@ -1,11 +1,9 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Feather } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
-import { radius } from '../theme/tokens';
 
 /**
  * Minimal structural subset of React Navigation's BottomTabBarProps that this
@@ -29,13 +27,26 @@ export type TabBarProps = {
   };
 };
 
-/** Feather icon names — one consistent vector-icon family across the whole app (matches HeaderBar's bell/settings/user glyphs), replacing the old mismatched emoji. */
-const TAB_ICON: Record<string, React.ComponentProps<typeof Feather>['name']> = {
-  index: 'home',
-  gym: 'activity',
-  finance: 'dollar-sign',
-  peptides: 'droplet',
-};
+type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+/** Matches sampleindex.html's Material Symbols choices (dashboard/fitness_center/
+ *  payments/pill) via MaterialCommunityIcons' closest equivalents. Only Home swaps
+ *  outline<->filled between states — the reference keeps the other three tabs' glyphs
+ *  identical across active/inactive, differentiating purely by color + highlight pill. */
+function tabIconName(routeName: string, focused: boolean): MCIName {
+  switch (routeName) {
+    case 'index':
+      return focused ? 'view-dashboard' : 'view-dashboard-outline';
+    case 'gym':
+      return 'dumbbell';
+    case 'finance':
+      return 'cash-multiple';
+    case 'peptides':
+      return 'pill';
+    default:
+      return 'circle-outline';
+  }
+}
 
 const TAB_LABEL: Record<string, string> = {
   index: 'Home',
@@ -45,62 +56,60 @@ const TAB_LABEL: Record<string, string> = {
 };
 
 /**
- * Custom floating glass bottom tab bar for expo-router's Tabs `tabBar` prop.
- * 56x56 rounded glass highlight sits behind the active tab's icon+label.
+ * Custom glass bottom tab bar for expo-router's Tabs `tabBar` prop. Edge-to-edge, bottom-
+ * anchored, top-corners-only radius (`rounded-t-[32px]`) — matches sampleindex.html's
+ * `<nav class="fixed bottom-0 left-0 w-full ... bg-black/60 backdrop-blur-[80px]
+ * border-t border-white/15 rounded-t-[32px]">` exactly, replacing the previous floating
+ * pill-shaped bar (16px side margins, fully-rounded corners).
  */
 export function TabBar({ state, descriptors, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
-  const { glass, palette } = useTheme();
-  const borderRadius = radius.tabBar;
+  const { glass, palette, mode } = useTheme();
+
+  const inactiveColor = mode === 'dark' ? 'rgba(255,255,255,0.5)' : palette.text.tertiary;
 
   return (
-    <View style={[styles.wrapper, { bottom: Math.max(insets.bottom, 16) }]} pointerEvents="box-none">
-      <LinearGradient
-        colors={glass.borderGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.borderWrap, { borderRadius }]}
-      >
-        <View style={[styles.clip, { borderRadius: Math.max(borderRadius - 1, 0) }]}>
-          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
-          <View style={styles.row}>
-            {state.routes.map((route, index) => {
-              const { options } = descriptors[route.key];
-              const isFocused = state.index === index;
-              const label = TAB_LABEL[route.name] ?? (options.title ?? route.name);
-              const iconName = TAB_ICON[route.name] ?? 'circle';
+    <View style={styles.wrapper} pointerEvents="box-none">
+      <View style={[styles.clip, { borderColor: glass.borderTabBar }]}>
+        <BlurView intensity={glass.blurIntensityTabBar} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fillTabBar }]} />
+        <View style={[styles.row, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+          {state.routes.map((route, index) => {
+            const { options } = descriptors[route.key];
+            const isFocused = state.index === index;
+            const label = TAB_LABEL[route.name] ?? (options.title ?? route.name);
+            const iconName = tabIconName(route.name, isFocused);
+            const color = isFocused ? palette.accentText : inactiveColor;
 
-              const onPress = () => {
-                const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-                if (!isFocused && !event.defaultPrevented) {
-                  navigation.navigate(route.name);
-                }
-              };
+            const onPress = () => {
+              const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name);
+              }
+            };
 
-              return (
-                <Pressable
-                  key={route.key}
-                  onPress={onPress}
-                  accessibilityRole="button"
-                  accessibilityState={isFocused ? { selected: true } : {}}
-                  style={styles.tab}
+            return (
+              <Pressable
+                key={route.key}
+                onPress={onPress}
+                accessibilityRole="button"
+                accessibilityState={isFocused ? { selected: true } : {}}
+                style={styles.tab}
+              >
+                <View
+                  style={[
+                    styles.contentWrap,
+                    isFocused && { backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' },
+                  ]}
                 >
-                  {isFocused ? (
-                    <View style={[styles.highlight, { backgroundColor: glass.borderElevated }]} />
-                  ) : null}
-                  <Feather
-                    name={iconName}
-                    size={22}
-                    color={isFocused ? palette.text.primary : palette.text.secondary}
-                  />
-                  <Text style={[styles.label, { color: palette.text.secondary }]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                  <MaterialCommunityIcons name={iconName} size={26} color={color} />
+                  <Text style={[styles.label, { color }]}>{label}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
-      </LinearGradient>
+      </View>
     </View>
   );
 }
@@ -108,50 +117,46 @@ export function TabBar({ state, descriptors, navigation }: TabBarProps) {
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-  },
-  borderWrap: {
-    padding: 1,
-    shadowColor: 'rgba(0,0,0,0.28)',
-    shadowOpacity: 1,
-    shadowRadius: 40,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 10,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   clip: {
-    height: 72,
     overflow: 'hidden',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    borderTopWidth: 1,
+    shadowColor: 'rgba(0,0,0,0.3)',
+    shadowOpacity: 1,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 10,
   },
   row: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
+    paddingTop: 12,
   },
   tab: {
-    position: 'relative',
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+  },
+  contentWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingHorizontal: 18,
     paddingVertical: 8,
-  },
-  highlight: {
-    position: 'absolute',
-    top: 2,
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-  },
-  icon: {
-    fontSize: 25,
-    lineHeight: 28,
+    borderRadius: 16,
   },
   label: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
 });
 

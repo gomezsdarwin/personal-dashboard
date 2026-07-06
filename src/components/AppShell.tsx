@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 import { artworks, defaultArtwork } from '../data/artworks';
+import { HeaderBar, HEADER_CONTENT_HEIGHT } from './HeaderBar';
 
 type Props = {
   children?: React.ReactNode;
@@ -19,9 +20,15 @@ type Props = {
 };
 
 /**
- * Per-screen scroll wrapper: painted-artwork background, top safe-area padding,
- * ~118px bottom padding to clear the floating tab bar, hidden scroll indicator, and a
- * 0.4s fade + rise-in animation on mount (mirrors Phone.dc.html's `floatIn` keyframes).
+ * Per-screen scroll wrapper: painted-artwork background, a fixed frosted HeaderBar
+ * pinned above the scroll content (matching sampleindex.html's `fixed top-0` header —
+ * scrolling content passes beneath it rather than scrolling it away), ~118px bottom
+ * padding to clear the tab bar, hidden scroll indicator, and a 0.4s fade + rise-in
+ * animation on mount (mirrors Phone.dc.html's `floatIn` keyframes).
+ *
+ * HeaderBar is mounted here (once, centrally) rather than per-screen — every screen used
+ * to render its own `<HeaderBar />` as the first scrolling child, which meant it scrolled
+ * away with the rest of the content instead of staying fixed like the reference.
  */
 export function AppShell({ children, contentStyle }: Props) {
   const insets = useSafeAreaInsets();
@@ -54,7 +61,7 @@ export function AppShell({ children, contentStyle }: Props) {
         style={styles.scroller}
         contentContainerStyle={[
           {
-            paddingTop: Math.max(insets.top, spacing.topSafe),
+            paddingTop: insets.top + HEADER_CONTENT_HEIGHT + 16,
             paddingBottom: spacing.bottomTabClearance,
             paddingHorizontal: spacing.screenSide,
           },
@@ -64,6 +71,8 @@ export function AppShell({ children, contentStyle }: Props) {
       >
         <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>
       </ScrollView>
+
+      <HeaderBar />
     </View>
   );
 }

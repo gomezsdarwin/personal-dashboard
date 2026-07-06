@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Slider from '@react-native-community/slider';
-import { Feather } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, type ThemeMode } from '../theme/ThemeContext';
 import { artworks } from '../data/artworks';
@@ -22,11 +22,17 @@ type Props = {
   onClose: () => void;
 };
 
-const MIN_OPACITY = 0.06;
-const MAX_OPACITY = 0.35;
+// Range widened to bracket the new 0.5 default (matching sampleindex.html's
+// `bg-black/50` cards) — the old 0.06-0.35 range was tuned around the previous 0.16
+// default and would clip the slider thumb below the new default's position.
+const MIN_OPACITY = 0.2;
+const MAX_OPACITY = 0.75;
 
+// 'auto' is the default neutral tint (black-on-dark / white-on-light, see
+// ThemeContext's buildGlass) — matches sampleindex.html's `bg-black/50` cards. The other
+// presets are real tint colors a user can opt into for personalization.
 const TINT_PRESETS: Array<{ label: string; value: string }> = [
-  { label: 'Neutral', value: '#ffffff' },
+  { label: 'Neutral', value: 'auto' },
   { label: 'Steel blue', value: '#7fa2c9' },
   { label: 'Cyan', value: '#6fd6e0' },
   { label: 'Lavender', value: '#b9a8ff' },
@@ -91,7 +97,7 @@ export function SettingsSheet({ visible, onClose }: Props) {
             <View style={styles.headerRow}>
               <Text style={[styles.title, { color: palette.text.primary }]}>Settings</Text>
               <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close settings">
-                <Feather name="x" size={22} color={palette.text.secondary} />
+                <MaterialCommunityIcons name="close" size={22} color={palette.text.secondary} />
               </Pressable>
             </View>
 
@@ -123,6 +129,10 @@ export function SettingsSheet({ visible, onClose }: Props) {
               <View style={styles.swatchRow}>
                 {TINT_PRESETS.map((preset) => {
                   const active = preset.value.toLowerCase() === glassTint.toLowerCase();
+                  // 'auto' has no fixed hex — preview it as the neutral color it actually
+                  // resolves to for the current mode (black-on-dark / white-on-light).
+                  const previewColor =
+                    preset.value === 'auto' ? (mode === 'dark' ? '#000000' : '#ffffff') : preset.value;
                   return (
                     <Pressable
                       key={preset.value}
@@ -134,7 +144,7 @@ export function SettingsSheet({ visible, onClose }: Props) {
                       <View
                         style={[
                           styles.swatch,
-                          { backgroundColor: preset.value },
+                          { backgroundColor: previewColor },
                           active && [styles.swatchActive, { borderColor: palette.accentText }],
                         ]}
                       />

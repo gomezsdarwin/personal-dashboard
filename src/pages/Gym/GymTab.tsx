@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppShell } from '../../components/AppShell';
-import { HeaderBar } from '../../components/HeaderBar';
 import { type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { SPLITS, todaySplit } from '../../data/workouts';
@@ -32,8 +31,6 @@ export default function GymTab() {
 
   return (
     <AppShell>
-      <HeaderBar />
-
       <View style={styles.header}>
         <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Gym</Text>
         <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>{`${splitLabel} · ${dateLabel}`}</Text>

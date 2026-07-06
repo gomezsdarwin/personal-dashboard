@@ -18,36 +18,53 @@ type PersistedSettings = {
 
 const DEFAULTS: PersistedSettings = {
   mode: 'dark',
-  glassOpacity: 0.16,
-  // Soft steel-blue (shares the app's lilac-sky accent family) instead of neutral white —
-  // a plain white tint at low opacity reads as flat "smoked glass"; a faint blue cast is
-  // what gives the reference liquid-glass look its luminous, less-washed-out character.
-  glassTint: '#9db8ff',
+  glassOpacity: 0.5,
+  // 'auto' resolves to a neutral black-on-dark / white-on-light fill (see buildGlass) —
+  // this matches sampleindex.html's cards exactly (`bg-black/50`, neutral translucency).
+  // A previous pass here defaulted to a steel-blue tint reasoning that neutral white read
+  // as flat "smoked glass"; the reference proves that was wrong — its cards are neutral
+  // black, and the periwinkle blue (#adc7ff) is used only as an accent for text/icons/
+  // active states, never as the card fill. 'auto' is still a personalization knob users
+  // can override via the Settings tint swatches (SettingsSheet's TINT_PRESETS).
+  glassTint: 'auto',
   artworkId: defaultArtworkId,
   displayName: '',
   todoCollapsed: false,
 };
 
+/** Legacy persisted tint values from before the 'auto' neutral default existed —
+ *  silently upgraded to 'auto' on load so old AsyncStorage blobs don't keep showing
+ *  the wrong-turn blue tint forever. */
+const LEGACY_TINTS = new Set(['#9db8ff']);
+
 /** Concrete, ready-to-use glass style values derived from the current theme state. */
 export type GlassRecipe = {
-  /** Card/chip/tabBar background fill: tint color at glassOpacity. */
+  /** Card/chip/hero background fill: neutral (or user tint) color at glassOpacity —
+   *  matches sampleindex.html's `bg-black/50`. */
   fill: string;
-  /** 1px border color for the resting state (~15% opacity). */
+  /** HeaderBar fill — slightly more transparent than the card fill (`bg-black/40`). */
+  fillHeader: string;
+  /** TabBar fill — slightly more opaque than the card fill (`bg-black/60`). */
+  fillTabBar: string;
+  /** 1px flat border color for cards/header (~10-12% opacity — `border-white/10`). */
   borderBase: string;
-  /** 1px border color for the elevated/active state (~30% opacity). */
+  /** Stronger neutral surface color used for active/elevated backgrounds (chips, active
+   *  mode pill, input focus borders, etc). */
   borderElevated: string;
-  /** Specular top-left -> bottom-right border gradient stops, for the LinearGradient
-   *  "1px border" wrapper trick used by GlassCard/GlassChip/HeroCard/TabBar. */
-  borderGradient: [string, string];
-  /** Slightly brighter variant of borderGradient for elevated/active surfaces. */
-  borderGradientElevated: [string, string];
+  /** TabBar's top border (`border-white/15`). */
+  borderTabBar: string;
   /** Diagonal fill gradient used by HeroCard (brighter top-left glaze over the flat fill). */
   heroGradient: [string, string];
   /** Scrim color laid over the background artwork for legibility, theme-aware. */
   scrim: string;
   /** expo-blur <BlurView> props. */
   blurTint: 'light' | 'dark';
+  /** Card/chip/hero blur intensity (`backdrop-blur-[60px]`). */
   blurIntensity: number;
+  /** Header blur intensity (`backdrop-blur-[80px]`). */
+  blurIntensityHeader: number;
+  /** TabBar blur intensity (`backdrop-blur-[80px]`). */
+  blurIntensityTabBar: number;
 };
 
 export type ThemeContextValue = {
@@ -95,18 +112,49 @@ function rgba(input: string, alpha: number): string {
   return `rgba(${r},${g},${b},${clamped.toFixed(3)})`;
 }
 
+/** Applies an alpha channel to any hex/rgb(a) color — exported for components that need
+ *  a themed translucent color outside the GlassRecipe (e.g. HeaderBar's avatar ring). */
+export function withAlpha(input: string, alpha: number): string {
+  return rgba(input, alpha);
+}
+
 function buildGlass(mode: ThemeMode, glassOpacity: number, glassTint: string): GlassRecipe {
   const palette = palettes[mode];
+  const isDark = mode === 'dark';
+
+  // Neutral base for the card fill: black in dark mode, white in light mode — this is
+  // what sampleindex.html's `bg-black/50` actually is (a flat neutral translucency, NOT
+  // tinted by any accent color). 'auto' is the default and always resolves to this;
+  // picking an explicit swatch in Settings overrides it with a real tint color.
+  const neutralBase = isDark ? '#000000' : '#ffffff';
+  const effectiveTint = glassTint === 'auto' ? neutralBase : glassTint;
+
+  // Card opacity is the user-adjustable base (default 0.5, matching bg-black/50).
+  // Header/tabBar derive from it with the same +/-0.1 offset the reference uses
+  // (40/50/60 — a symmetric spread around the card's 50), so the slider still does
+  // something meaningful for every glass surface, not just cards.
+  const cardOpacity = glassOpacity;
+  const headerOpacity = Math.max(glassOpacity - 0.1, 0.05);
+  const tabBarOpacity = Math.min(glassOpacity + 0.1, 0.92);
+
+  const borderBaseAlpha = isDark ? 0.1 : 0.12;
+  const borderElevatedAlpha = isDark ? 0.16 : 0.2;
+  const borderTabBarAlpha = isDark ? 0.15 : 0.18;
+  const borderRgb = isDark ? '255,255,255' : '0,0,0';
+
   return {
-    fill: rgba(glassTint, glassOpacity),
-    borderBase: 'rgba(255,255,255,0.15)',
-    borderElevated: 'rgba(255,255,255,0.30)',
-    borderGradient: ['rgba(255,255,255,0.5)', 'rgba(255,255,255,0.08)'],
-    borderGradientElevated: ['rgba(255,255,255,0.65)', 'rgba(255,255,255,0.14)'],
-    heroGradient: [rgba(glassTint, glassOpacity + 0.14), rgba(glassTint, Math.max(glassOpacity - 0.06, 0.02))],
+    fill: rgba(effectiveTint, cardOpacity),
+    fillHeader: rgba(effectiveTint, headerOpacity),
+    fillTabBar: rgba(effectiveTint, tabBarOpacity),
+    borderBase: `rgba(${borderRgb},${borderBaseAlpha})`,
+    borderElevated: `rgba(${borderRgb},${borderElevatedAlpha})`,
+    borderTabBar: `rgba(${borderRgb},${borderTabBarAlpha})`,
+    heroGradient: [rgba(effectiveTint, cardOpacity + 0.14), rgba(effectiveTint, Math.max(cardOpacity - 0.06, 0.02))],
     scrim: palette.scrim,
-    blurTint: mode === 'dark' ? 'dark' : 'light',
-    blurIntensity: 50,
+    blurTint: isDark ? 'dark' : 'light',
+    blurIntensity: 60,
+    blurIntensityHeader: 80,
+    blurIntensityTabBar: 80,
   };
 }
 
@@ -134,7 +182,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
         if (parsed.mode === 'light' || parsed.mode === 'dark') setMode(parsed.mode);
         if (typeof parsed.glassOpacity === 'number') setGlassOpacity(parsed.glassOpacity);
-        if (typeof parsed.glassTint === 'string') setGlassTint(parsed.glassTint);
+        if (typeof parsed.glassTint === 'string') {
+          setGlassTint(LEGACY_TINTS.has(parsed.glassTint) ? 'auto' : parsed.glassTint);
+        }
         if (typeof parsed.artworkId === 'string') setArtworkId(parsed.artworkId);
         if (typeof parsed.displayName === 'string') setDisplayName(parsed.displayName);
         if (typeof parsed.todoCollapsed === 'boolean') setTodoCollapsed(parsed.todoCollapsed);

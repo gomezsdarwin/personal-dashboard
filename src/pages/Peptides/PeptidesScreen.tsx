@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
-import { HeaderBar } from '../../components/HeaderBar';
 import { radius, spacing, type } from '../../theme/tokens';
-import { useTheme } from '../../theme/ThemeContext';
+import { useTheme, withAlpha } from '../../theme/ThemeContext';
 import { accent } from '../../theme/accent';
 import { useRepo } from '../../hooks/useRepo';
 import type { NewRow, PeptideDoseRow, PeptideInventoryRow } from '../../lib/types';
@@ -54,8 +54,6 @@ export default function PeptidesScreen() {
 
   return (
     <AppShell>
-      <HeaderBar />
-
       <View style={styles.header}>
         <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Peptides</Text>
         <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Schedule & inventory</Text>
@@ -106,22 +104,25 @@ function DoseRow({
   onToggle: () => void;
   onRemove: () => void;
 }) {
-  const { palette, glass } = useTheme();
-  const gradient = accent.diagonal();
+  const { palette, mode } = useTheme();
+  // Unchecked: border-white/30 + bg-white/5 (dark) — checked: border-primary +
+  // bg-primary/30 tinted fill, matching sampleindex.html's task checkboxes exactly.
+  const uncheckedBorder = mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)';
+  const uncheckedBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
   return (
     <View style={styles.doseRow}>
       <Pressable onPress={onToggle} hitSlop={8} style={styles.checkboxWrap}>
         {dose.taken ? (
-          <LinearGradient colors={gradient.colors} start={gradient.start} end={gradient.end} style={styles.checkbox}>
-            <Text style={styles.checkboxMark}>✓</Text>
-          </LinearGradient>
-        ) : (
           <View
             style={[
               styles.checkbox,
-              { backgroundColor: glass.fill, borderColor: glass.borderElevated },
+              { borderColor: palette.accentText, backgroundColor: withAlpha(palette.accentText, 0.3) },
             ]}
-          />
+          >
+            <MaterialCommunityIcons name="check" size={16} color="#ffffff" />
+          </View>
+        ) : (
+          <View style={[styles.checkbox, { backgroundColor: uncheckedBg, borderColor: uncheckedBorder }]} />
         )}
       </Pressable>
       <View style={styles.doseInfo}>
@@ -367,21 +368,15 @@ const styles = StyleSheet.create({
   checkboxWrap: {
     flexShrink: 0,
   },
-  // Rounded-square (radius 7 on a 24px box), matching Home's To-Do checkboxes
-  // and the habit-tracker's cells — previously this used radius.checkbox (12,
-  // fully round), which no longer matches the app's toggle-shape language.
+  // 24px box, rounded-lg (8px), border-2 — matches Home's To-Do checkboxes and
+  // sampleindex.html's task checkboxes exactly.
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 7,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-  },
-  checkboxMark: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
+    borderWidth: 2,
   },
   doseInfo: {
     flex: 1,

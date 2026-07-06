@@ -8,20 +8,17 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { Feather } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
-import { HeaderBar } from '../../components/HeaderBar';
 import { WeekStrip } from '../../components/WeekStrip';
 import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
 import { dueMeta } from '../../lib/dueDate';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { NewRow, TaskRow } from '../../lib/types';
-import { accent } from '../../theme/accent';
 import { type as typeScale } from '../../theme/tokens';
-import { useTheme } from '../../theme/ThemeContext';
+import { useTheme, withAlpha } from '../../theme/ThemeContext';
 
 /** Same relative-day helper as Phone.dc.html's `d(n)` — local "today" offset by n days, ISO date. */
 function relativeIso(n: number): string {
@@ -56,7 +53,7 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
-  const { palette, glass, displayName, todoCollapsed, setTodoCollapsed } = useTheme();
+  const { palette, glass, mode, displayName, todoCollapsed, setTodoCollapsed } = useTheme();
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
@@ -170,14 +167,15 @@ export default function HomeScreen() {
     setEditingText('');
   };
 
-  const diag = accent.diagonal();
-
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
+  const iconBtnBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  // Unchecked checkbox: border-white/30 + bg-white/5 (dark) — matches
+  // sampleindex.html's task checkboxes exactly.
+  const uncheckedBorder = mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)';
+  const uncheckedBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
 
   return (
     <AppShell>
-      <HeaderBar />
-
       <View style={styles.header}>
         <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
         <Text style={[styles.name, { color: palette.text.primary }]}>{userName}</Text>
@@ -187,7 +185,7 @@ export default function HomeScreen() {
 
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={[styles.cardTitle, { color: palette.text.primaryAlt }]}>To-Do</Text>
+          <Text style={[styles.cardTitle, { color: palette.accentText }]}>To-Do</Text>
           <View style={styles.cardHeaderRight}>
             <Text style={[styles.openCount, { color: palette.text.quaternary }]}>{openCount} open</Text>
             <Pressable
@@ -196,7 +194,7 @@ export default function HomeScreen() {
               accessibilityRole="button"
               accessibilityLabel={todoCollapsed ? 'Expand to-do list' : 'Collapse to-do list'}
             >
-              <Feather
+              <MaterialCommunityIcons
                 name={todoCollapsed ? 'chevron-down' : 'chevron-up'}
                 size={18}
                 color={palette.text.secondary}
@@ -232,22 +230,20 @@ export default function HomeScreen() {
                   style={[styles.dueTrigger, inputStyle]}
                   onPress={() => openDatePicker('new', newDue ? toIsoDate(newDue) : null)}
                 >
-                  <Feather
+                  <MaterialCommunityIcons
                     name="calendar"
                     size={16}
                     color={newDue ? palette.accentText : palette.text.secondary}
                   />
                 </Pressable>
               )}
-              <Pressable onPress={handleAddTask}>
-                <LinearGradient
-                  colors={diag.colors}
-                  start={diag.start}
-                  end={diag.end}
-                  style={styles.addButton}
-                >
-                  <Text style={styles.addButtonText}>+</Text>
-                </LinearGradient>
+              <Pressable
+                onPress={handleAddTask}
+                style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+                accessibilityRole="button"
+                accessibilityLabel="Add task"
+              >
+                <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
               </Pressable>
             </View>
 
@@ -267,16 +263,16 @@ export default function HomeScreen() {
                   style={styles.checkboxWrap}
                 >
                   {t.done ? (
-                    <LinearGradient
-                      colors={diag.colors}
-                      start={diag.start}
-                      end={diag.end}
-                      style={styles.checkbox}
+                    <View
+                      style={[
+                        styles.checkbox,
+                        { borderColor: palette.accentText, backgroundColor: withAlpha(palette.accentText, 0.3) },
+                      ]}
                     >
-                      <Text style={styles.checkmark}>✓</Text>
-                    </LinearGradient>
+                      <MaterialCommunityIcons name="check" size={16} color="#ffffff" />
+                    </View>
                   ) : (
-                    <View style={[styles.checkbox, styles.checkboxOff, { borderColor: glass.borderElevated }]} />
+                    <View style={[styles.checkbox, { backgroundColor: uncheckedBg, borderColor: uncheckedBorder }]} />
                   )}
                 </Pressable>
 
@@ -309,7 +305,7 @@ export default function HomeScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={t.due_date ? `Due date ${t.due_date}` : 'Set due date'}
                   >
-                    <Feather
+                    <MaterialCommunityIcons
                       name="calendar"
                       size={16}
                       color={t.due_date ? palette.accentText : palette.text.faint}
@@ -362,9 +358,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingBottom: 12,
   },
+  // Small accent-colored uppercase label with wide tracking — matches
+  // sampleindex.html's "TODAY'S TASKS" section label treatment exactly (text-primary,
+  // font-bold, tracking-widest, uppercase, ~12px). Text itself stays "To-Do".
   cardTitle: {
-    fontSize: typeScale.cardTitleLg.fontSize,
-    fontWeight: typeScale.cardTitleLg.fontWeight,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
   },
   cardHeaderRight: {
     flexDirection: 'row',
@@ -420,14 +421,9 @@ const styles = StyleSheet.create({
   addButton: {
     width: 42,
     height: 42,
-    borderRadius: 14,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '600',
   },
   taskRow: {
     flexDirection: 'row',
@@ -442,21 +438,14 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
   },
+  // 24px box, rounded-lg (8px), border-2 — matches sampleindex.html's checkboxes exactly.
   checkbox: {
     width: 24,
     height: 24,
-    borderRadius: 7,
+    borderRadius: 8,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  checkboxOff: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 2,
-  },
-  checkmark: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
   },
   taskTitle: {
     flex: 1,
