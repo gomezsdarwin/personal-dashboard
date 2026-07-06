@@ -18,8 +18,11 @@ type PersistedSettings = {
 
 const DEFAULTS: PersistedSettings = {
   mode: 'dark',
-  glassOpacity: 0.12,
-  glassTint: '#ffffff',
+  glassOpacity: 0.16,
+  // Soft steel-blue (shares the app's lilac-sky accent family) instead of neutral white —
+  // a plain white tint at low opacity reads as flat "smoked glass"; a faint blue cast is
+  // what gives the reference liquid-glass look its luminous, less-washed-out character.
+  glassTint: '#9db8ff',
   artworkId: defaultArtworkId,
   displayName: '',
   todoCollapsed: false,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeContext';
@@ -28,11 +29,12 @@ export type TabBarProps = {
   };
 };
 
-const TAB_ICON: Record<string, string> = {
-  index: '🏠',
-  gym: '🏋️',
-  finance: '💰',
-  peptides: '💊',
+/** Feather icon names — one consistent vector-icon family across the whole app (matches HeaderBar's bell/settings/user glyphs), replacing the old mismatched emoji. */
+const TAB_ICON: Record<string, React.ComponentProps<typeof Feather>['name']> = {
+  index: 'home',
+  gym: 'activity',
+  finance: 'dollar-sign',
+  peptides: 'droplet',
 };
 
 const TAB_LABEL: Record<string, string> = {
@@ -67,7 +69,7 @@ export function TabBar({ state, descriptors, navigation }: TabBarProps) {
               const { options } = descriptors[route.key];
               const isFocused = state.index === index;
               const label = TAB_LABEL[route.name] ?? (options.title ?? route.name);
-              const icon = TAB_ICON[route.name] ?? '•';
+              const iconName = TAB_ICON[route.name] ?? 'circle';
 
               const onPress = () => {
                 const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
@@ -87,7 +89,11 @@ export function TabBar({ state, descriptors, navigation }: TabBarProps) {
                   {isFocused ? (
                     <View style={[styles.highlight, { backgroundColor: glass.borderElevated }]} />
                   ) : null}
-                  <Text style={styles.icon}>{icon}</Text>
+                  <Feather
+                    name={iconName}
+                    size={22}
+                    color={isFocused ? palette.text.primary : palette.text.secondary}
+                  />
                   <Text style={[styles.label, { color: palette.text.secondary }]}>{label}</Text>
                 </Pressable>
               );
