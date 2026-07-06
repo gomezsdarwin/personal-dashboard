@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -11,11 +11,9 @@ import DateTimePicker, { type DateTimePickerEvent } from '@react-native-communit
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
-import { WeekStrip } from '../../components/WeekStrip';
 import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
 import { dueMeta } from '../../lib/dueDate';
-import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 import type { NewRow, TaskRow } from '../../lib/types';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme, withAlpha } from '../../theme/ThemeContext';
@@ -53,37 +51,14 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
-  const { palette, glass, mode, displayName, todoCollapsed, setTodoCollapsed } = useTheme();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const { palette, glass, mode, todoCollapsed, setTodoCollapsed } = useTheme();
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<'new' | string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
-
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
-
-    supabase.auth.getSession().then(({ data }) => {
-      setUserEmail(data.session?.user?.email ?? null);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email ?? null);
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const userName = useMemo(() => {
-    const trimmedDisplay = displayName.trim();
-    if (trimmedDisplay) return trimmedDisplay;
-    if (!userEmail) return 'there';
-    const local = userEmail.split('@')[0];
-    if (!local) return 'there';
-    return local.charAt(0).toUpperCase() + local.slice(1);
-  }, [displayName, userEmail]);
 
   /** Hour-based greeting: 5-11:59 morning, 12-17:59 afternoon, 18:00-4:59 evening. */
   const greeting = useMemo(() => {
@@ -118,12 +93,23 @@ export default function HomeScreen() {
     setNewDue(null);
   };
 
+  const closeAddTask = () => {
+    setAddTaskOpen(false);
+    setNewTitle('');
+    setNewDue(null);
+  };
+
   /** Opens the shared native DateTimePicker targeted at either the add-row ('new') or a
    *  specific task id; on web, toggles that row's inline YYYY-MM-DD text editor instead. */
   const openDatePicker = (target: 'new' | string, currentDue: string | null) => {
     if (Platform.OS === 'web') {
       setEditingTaskId((prev) => (prev === target ? null : target));
       setEditingText(currentDue ?? '');
+      return;
+    }
+    if (showPicker && pickerTarget === target) {
+      setShowPicker(false);
+      setPickerTarget(null);
       return;
     }
     setPickerTarget(target);
@@ -177,11 +163,11 @@ export default function HomeScreen() {
   return (
     <AppShell>
       <View style={styles.header}>
-        <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
-        <Text style={[styles.name, { color: palette.text.primary }]}>{userName}</Text>
+        <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}, welcome back!</Text>
         <Text style={[styles.dateLine, { color: palette.text.secondary }]}>{dateStr}</Text>
-        <WeekStrip />
       </View>
+
+      <HabitTrackerCard />
 
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
@@ -205,47 +191,68 @@ export default function HomeScreen() {
 
         {todoCollapsed ? null : (
           <>
-            <View style={styles.addRow}>
-              <TextInput
-                value={newTitle}
-                onChangeText={setNewTitle}
-                onSubmitEditing={handleAddTask}
-                returnKeyType="done"
-                placeholder="Add a task…"
-                placeholderTextColor={palette.text.quaternary}
-                style={[styles.input, inputStyle, { color: palette.text.primary }]}
-              />
-              {Platform.OS === 'web' ? (
+            {addTaskOpen ? (
+              <View style={styles.addRow}>
                 <TextInput
-                  value={newDue ? toIsoDate(newDue) : ''}
-                  onChangeText={(txt) =>
-                    setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
-                  }
-                  placeholder="YYYY-MM-DD"
+                  autoFocus
+                  value={newTitle}
+                  onChangeText={setNewTitle}
+                  onSubmitEditing={handleAddTask}
+                  returnKeyType="done"
+                  placeholder="Add a task…"
                   placeholderTextColor={palette.text.quaternary}
-                  style={[styles.webDueInput, inputStyle, { color: palette.text.primary }]}
+                  style={[styles.input, inputStyle, { color: palette.text.primary }]}
                 />
-              ) : (
-                <Pressable
-                  style={[styles.dueTrigger, inputStyle]}
-                  onPress={() => openDatePicker('new', newDue ? toIsoDate(newDue) : null)}
-                >
-                  <MaterialCommunityIcons
-                    name="calendar"
-                    size={16}
-                    color={newDue ? palette.accentText : palette.text.secondary}
+                {Platform.OS === 'web' ? (
+                  <TextInput
+                    value={newDue ? toIsoDate(newDue) : ''}
+                    onChangeText={(txt) =>
+                      setNewDue(/^\d{4}-\d{2}-\d{2}$/.test(txt) ? new Date(`${txt}T00:00:00`) : null)
+                    }
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={palette.text.quaternary}
+                    style={[styles.webDueInput, inputStyle, { color: palette.text.primary }]}
                   />
+                ) : (
+                  <Pressable
+                    style={[styles.dueTrigger, inputStyle]}
+                    onPress={() => openDatePicker('new', newDue ? toIsoDate(newDue) : null)}
+                  >
+                    <MaterialCommunityIcons
+                      name="calendar"
+                      size={16}
+                      color={newDue ? palette.accentText : palette.text.secondary}
+                    />
+                  </Pressable>
+                )}
+                <Pressable
+                  onPress={handleAddTask}
+                  style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add task"
+                >
+                  <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
                 </Pressable>
-              )}
+                <Pressable
+                  onPress={closeAddTask}
+                  style={styles.closeAddButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel adding task"
+                >
+                  <MaterialCommunityIcons name="close" size={18} color={palette.text.faint} />
+                </Pressable>
+              </View>
+            ) : (
               <Pressable
-                onPress={handleAddTask}
-                style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+                onPress={() => setAddTaskOpen(true)}
+                style={styles.addTrigger}
                 accessibilityRole="button"
                 accessibilityLabel="Add task"
               >
-                <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
+                <MaterialCommunityIcons name="plus-circle" size={22} color={palette.accentText} />
+                <Text style={[styles.addTriggerLabel, { color: palette.text.secondary }]}>Add a task…</Text>
               </Pressable>
-            </View>
+            )}
 
             {showPicker && Platform.OS !== 'web' ? (
               <DateTimePicker
@@ -321,8 +328,6 @@ export default function HomeScreen() {
           </>
         )}
       </GlassCard>
-
-      <HabitTrackerCard />
     </AppShell>
   );
 }
@@ -336,13 +341,6 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: typeScale.greetingLabel.fontSize,
     fontWeight: typeScale.greetingLabel.fontWeight,
-  },
-  name: {
-    fontSize: typeScale.greetingName.fontSize,
-    fontWeight: typeScale.greetingName.fontWeight,
-    letterSpacing: typeScale.greetingName.letterSpacing,
-    marginTop: 2,
-    lineHeight: 46,
   },
   dateLine: {
     fontSize: typeScale.body.fontSize,
@@ -387,6 +385,23 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 2,
     paddingBottom: 12,
+  },
+  addTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 2,
+    paddingBottom: 12,
+  },
+  addTriggerLabel: {
+    fontSize: typeScale.body.fontSize,
+    fontWeight: typeScale.bodyMedium.fontWeight,
+  },
+  closeAddButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   input: {
     flex: 1,

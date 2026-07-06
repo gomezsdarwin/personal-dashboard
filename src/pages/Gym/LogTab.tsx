@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GlassCard } from '../../components/GlassCard';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
@@ -69,6 +70,14 @@ function buildLastData(sessions: GymSessionRow[], today: string): Record<string,
   return result;
 }
 
+/** Merges a slot's static-library options with any user-added alternatives
+ * persisted on the split config entry (see `GymSplitConfigEntry.extraOptions`). */
+function mergeSlotOptions(slot: string, extraOptions: ExerciseOption[] | undefined): ExerciseOption[] {
+  const options = getSlotOptions(slot);
+  if (!extraOptions || extraOptions.length === 0) return options;
+  return [...options, ...extraOptions.filter((o) => !options.some((x) => x.id === o.id))];
+}
+
 function buildSets(last: GymSet[] | undefined, fallbackWeight: number): [LocalSet, LocalSet, LocalSet] {
   if (last && last.length === 3) {
     return last.map((s) => ({
@@ -111,7 +120,7 @@ function buildExerciseList(
       });
       continue;
     }
-    const options = getSlotOptions(entry.slot);
+    const options = mergeSlotOptions(entry.slot, entry.extraOptions);
     if (options.length === 0) continue; // slot no longer exists in the library
     const selected = options.find((o) => o.id === entry.id) ?? options[0];
     built.push({
@@ -126,12 +135,23 @@ function buildExerciseList(
   return built;
 }
 
-/** Rehydrates from an already-saved today+split session (spec §6.3 step 4). */
-function rehydrateFromSession(session: GymSessionRow): { exercises: LocalExercise[]; collapsed: Set<number> } {
+/** Rehydrates from an already-saved today+split session (spec §6.3 step 4).
+ * `config` (the split's current config, if any) supplies persisted custom
+ * alternatives so the Swap sheet still lists them for an already-logged day. */
+function rehydrateFromSession(
+  session: GymSessionRow,
+  config: GymSplitConfigEntry[] | null
+): { exercises: LocalExercise[]; collapsed: Set<number> } {
+  const extraOptionsBySlot = new Map<string, ExerciseOption[]>();
+  for (const entry of config ?? []) {
+    if (!entry.custom && entry.extraOptions && entry.extraOptions.length > 0) {
+      extraOptionsBySlot.set(entry.slot, entry.extraOptions);
+    }
+  }
   const collapsed = new Set<number>();
   const exercises = session.exercises.map((ex, idx) => {
     const slot = ex.slot || findSlot(ex.id);
-    const options = getSlotOptions(slot);
+    const options = mergeSlotOptions(slot, extraOptionsBySlot.get(slot));
     const sets = ex.sets.map((s) => {
       const hit = hasRepValue(s.reps);
       return {
@@ -178,6 +198,14 @@ export function LogTab() {
 
   const lastData = useMemo(() => buildLastData(sessionsRepo.rows, today), [sessionsRepo.rows, today]);
 
+  const splitLabels = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of SPLITS) {
+      map[s.id] = configRepo.rows.find((c) => c.split_id === s.id)?.label || s.label;
+    }
+    return map;
+  }, [configRepo.rows]);
+
   // Rebuild/rehydrate the exercise list whenever the selected split changes,
   // or the underlying repos settle/mutate (e.g. right after Save Session).
   useEffect(() => {
@@ -191,15 +219,15 @@ export function LogTab() {
       setEditMode(false);
       return;
     }
+    const configRow = configRepo.rows.find((c) => c.split_id === selectedSplit);
     const existing = sessionsRepo.rows.find((s) => s.date === today && s.split === selectedSplit);
     if (existing) {
-      const { exercises: ex, collapsed: col } = rehydrateFromSession(existing);
+      const { exercises: ex, collapsed: col } = rehydrateFromSession(existing, configRow?.config ?? null);
       setExercises(ex);
       setCollapsed(col);
       setCurrentSessionId(existing.id);
       setSaved(true);
     } else {
-      const configRow = configRepo.rows.find((c) => c.split_id === selectedSplit);
       setExercises(buildExerciseList(selectedSplit, lastData, configRow?.config ?? null));
       setCollapsed(new Set());
       setCurrentSessionId(null);
@@ -308,19 +336,35 @@ export function LogTab() {
 
   // --- split editor (spec §6.8) ----------------------------------------------
 
-  async function handleEditorSave(newConfig: GymSplitConfigEntry[]) {
+  async function handleEditorSave(newConfig: GymSplitConfigEntry[], newLabel: string) {
     if (!selectedSplit) return;
+    const defaultLabel = SPLITS.find((s) => s.id === selectedSplit)?.label ?? selectedSplit;
+    const trimmed = newLabel.trim();
+    const labelOverride = trimmed && trimmed !== defaultLabel ? trimmed : null;
     const existingConfig = configRepo.rows.find((c) => c.split_id === selectedSplit);
     if (existingConfig) {
-      await configRepo.update(existingConfig.id, { split_id: selectedSplit, config: newConfig });
+      await configRepo.update(existingConfig.id, { split_id: selectedSplit, config: newConfig, label: labelOverride });
     } else {
-      await configRepo.insert({ split_id: selectedSplit, config: newConfig });
+      await configRepo.insert({ split_id: selectedSplit, config: newConfig, label: labelOverride });
     }
     setExercises(buildExerciseList(selectedSplit, lastData, newConfig));
     setCollapsed(new Set());
     setSwapOpenIdx(null);
     setSaved(false);
     setEditMode(false);
+  }
+
+  // --- session history deletion (spec-adjacent; opened from HistoryModal) ----
+
+  async function deleteHistoryEntry(exerciseId: string, date: string) {
+    const session = sessionsRepo.rows.find((s) => s.date === date && s.exercises.some((e) => e.id === exerciseId));
+    if (!session) return;
+    const remaining = session.exercises.filter((e) => e.id !== exerciseId);
+    if (remaining.length === 0) {
+      await sessionsRepo.remove(session.id);
+    } else {
+      await sessionsRepo.update(session.id, { exercises: remaining });
+    }
   }
 
   // --- save session (spec §6.9) ----------------------------------------------
@@ -353,18 +397,20 @@ export function LogTab() {
     <View>
       <SplitPicker
         selected={selectedSplit}
+        labels={splitLabels}
         onSelect={setSelectedSplit}
         onEdit={() => setEditMode(true)}
       />
 
       {!selectedSplit ? (
-        <GlassCard style={styles.restCard}>
-          <Text style={[styles.restText, { color: palette.text.tertiary }]}>Rest day — no split selected.</Text>
+        <GlassCard style={styles.emptyCard}>
+          <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No split selected — choose one above.</Text>
         </GlassCard>
       ) : editMode ? (
         <SplitEditor
           splitId={selectedSplit}
           currentConfig={configRepo.rows.find((c) => c.split_id === selectedSplit)?.config ?? null}
+          currentLabel={splitLabels[selectedSplit] ?? selectedSplit}
           onSave={handleEditorSave}
           onCancel={() => setEditMode(false)}
         />
@@ -448,6 +494,7 @@ export function LogTab() {
               exercise={historyModalEx}
               sessions={sessionsRepo.rows}
               onClose={() => setHistoryModalEx(null)}
+              onDeleteEntry={(date) => deleteHistoryEntry(historyModalEx.id, date)}
             />
           )}
         </>
@@ -462,28 +509,18 @@ export function LogTab() {
 
 function SplitPicker({
   selected,
+  labels,
   onSelect,
   onEdit,
 }: {
   selected: string | null;
+  labels: Record<string, string>;
   onSelect: (id: string | null) => void;
   onEdit: () => void;
 }) {
   const { palette } = useTheme();
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.splitScroll} contentContainerStyle={styles.splitRow}>
-      <Pressable
-        style={[
-          styles.splitPill,
-          { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
-          selected === null && { backgroundColor: palette.accentText, borderColor: palette.accentText },
-        ]}
-        onPress={() => onSelect(null)}
-      >
-        <Text style={[styles.splitPillText, { color: selected === null ? '#ffffff' : palette.text.secondary }]}>
-          Rest day
-        </Text>
-      </Pressable>
       {SPLITS.map((s) => {
         const active = s.id === selected;
         return (
@@ -496,7 +533,7 @@ function SplitPicker({
             ]}
             onPress={() => onSelect(s.id)}
           >
-            <Text style={[styles.splitPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{s.label}</Text>
+            <Text style={[styles.splitPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{labels[s.id] ?? s.label}</Text>
           </Pressable>
         );
       })}
@@ -504,7 +541,8 @@ function SplitPicker({
        * selected, per spec §6.8. */}
       {selected != null && (
         <Pressable style={styles.editBtn} onPress={onEdit}>
-          <Text style={[styles.editBtnText, { color: palette.text.tertiary }]}>✏ Edit</Text>
+          <MaterialCommunityIcons name="pencil-outline" size={14} color={palette.text.tertiary} />
+          <Text style={[styles.editBtnText, { color: palette.text.tertiary }]}>Edit</Text>
         </Pressable>
       )}
     </ScrollView>
@@ -811,6 +849,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 9,
     marginLeft: 4,
@@ -819,11 +860,11 @@ const styles = StyleSheet.create({
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
   },
-  restCard: {
+  emptyCard: {
     alignItems: 'center',
     paddingVertical: 24,
   },
-  restText: {
+  emptyText: {
     fontSize: type.body.fontSize,
   },
   exerciseCard: {

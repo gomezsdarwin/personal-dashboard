@@ -69,8 +69,14 @@ function buildRows(splitId: string, currentConfig: GymSplitConfigEntry[] | null)
         customRows.push(customRow(entry));
       } else {
         const row = libraryRow(entry.slot, getMuscle(entry.slot) ?? '', true);
-        const selected = row.options.find((o) => o.id === entry.id) ?? row.options[0];
-        enabledRows.push({ ...row, selectedId: selected?.id ?? entry.id, name: selected?.name ?? row.name });
+        // Re-merge any previously-added custom alternatives (persisted on the
+        // config entry, since they aren't part of the static MUSCLES library).
+        const options =
+          entry.extraOptions && entry.extraOptions.length > 0
+            ? [...row.options, ...entry.extraOptions.filter((o) => !row.options.some((x) => x.id === o.id))]
+            : row.options;
+        const selected = options.find((o) => o.id === entry.id) ?? options[0];
+        enabledRows.push({ ...row, options, selectedId: selected?.id ?? entry.id, name: selected?.name ?? row.name });
       }
     }
 
@@ -110,12 +116,14 @@ function sortEnabledFirst(rows: EditorRow[]): EditorRow[] {
 type Props = {
   splitId: string;
   currentConfig: GymSplitConfigEntry[] | null;
-  onSave: (config: GymSplitConfigEntry[]) => void;
+  currentLabel: string;
+  onSave: (config: GymSplitConfigEntry[], label: string) => void;
   onCancel: () => void;
 };
 
-export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props) {
+export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCancel }: Props) {
   const [rows, setRows] = useState<EditorRow[]>(() => buildRows(splitId, currentConfig));
+  const [labelInput, setLabelInput] = useState(currentLabel);
   const [newName, setNewName] = useState('');
   const [newWeight, setNewWeight] = useState('');
   const [newMuscle, setNewMuscle] = useState<string>(Object.keys(MUSCLES)[0] ?? '');
@@ -133,6 +141,22 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
         if (!opt) return r;
         return { ...r, selectedId: id, name: opt.name, defaultWeight: opt.defaultWeight };
       })
+    );
+  }
+
+  /** Adds a brand-new, user-named alternative to a library slot (not one of
+   * the slot's preset `options`) and selects it. Persisted via the row's
+   * `options` diffed against the static library at save time. */
+  function addAlternative(slot: string, name: string, weight: number) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const opt: ExerciseOption = { id: `alt_${Date.now()}`, name: trimmed, defaultWeight: Number.isFinite(weight) ? weight : 0 };
+    setRows((prev) =>
+      prev.map((r) =>
+        r.slot === slot && !r.custom
+          ? { ...r, options: [...r.options, opt], selectedId: opt.id, name: opt.name, defaultWeight: opt.defaultWeight }
+          : r
+      )
     );
   }
 
@@ -181,19 +205,24 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
   function handleSave() {
     const config: GymSplitConfigEntry[] = rows
       .filter((r) => r.enabled)
-      .map((r) =>
-        r.custom
-          ? {
-              slot: r.slot,
-              id: r.selectedId,
-              name: r.name,
-              defaultWeight: r.defaultWeight,
-              muscle: r.muscle,
-              custom: true as const,
-            }
-          : { slot: r.slot, id: r.selectedId }
-      );
-    onSave(config);
+      .map((r) => {
+        if (r.custom) {
+          return {
+            slot: r.slot,
+            id: r.selectedId,
+            name: r.name,
+            defaultWeight: r.defaultWeight,
+            muscle: r.muscle,
+            custom: true as const,
+          };
+        }
+        const baseOptions = getSlotOptions(r.slot);
+        const extraOptions = r.options.filter((o) => !baseOptions.some((b) => b.id === o.id));
+        return extraOptions.length > 0
+          ? { slot: r.slot, id: r.selectedId, extraOptions }
+          : { slot: r.slot, id: r.selectedId };
+      });
+    onSave(config, labelInput);
   }
 
   return (
@@ -213,6 +242,17 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
         </View>
       </View>
 
+      <View style={styles.labelRow}>
+        <Text style={[styles.labelCaption, { color: palette.text.tertiary }]}>SPLIT NAME</Text>
+        <TextInput
+          style={[styles.labelInput, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
+          value={labelInput}
+          onChangeText={setLabelInput}
+          placeholder={currentLabel}
+          placeholderTextColor={palette.text.faint}
+        />
+      </View>
+
       <GlassCard style={styles.listCard}>
         {rows.map((row, idx) => (
           <EditorRowView
@@ -222,6 +262,7 @@ export function SplitEditor({ splitId, currentConfig, onSave, onCancel }: Props)
             isLast={idx === rows.length - 1}
             onToggle={() => toggle(row.slot)}
             onPickAlt={(id) => pickAlt(row.slot, id)}
+            onAddAlt={(name, weight) => addAlternative(row.slot, name, weight)}
             onMoveUp={() => moveUp(idx)}
             onMoveDown={() => moveDown(idx)}
             onRemove={() => removeCustom(row.slot)}
@@ -286,6 +327,7 @@ function EditorRowView({
   isLast,
   onToggle,
   onPickAlt,
+  onAddAlt,
   onMoveUp,
   onMoveDown,
   onRemove,
@@ -295,11 +337,24 @@ function EditorRowView({
   isLast: boolean;
   onToggle: () => void;
   onPickAlt: (id: string) => void;
+  onAddAlt: (name: string, weight: number) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, glass } = useTheme();
+  const [addingAlt, setAddingAlt] = useState(false);
+  const [altName, setAltName] = useState('');
+  const [altWeight, setAltWeight] = useState('');
+
+  function commitAlt() {
+    if (!altName.trim()) return;
+    onAddAlt(altName, Number(altWeight));
+    setAddingAlt(false);
+    setAltName('');
+    setAltWeight('');
+  }
+
   return (
     <View style={[styles.row, { borderBottomColor: palette.hairline }, !row.enabled && styles.rowDisabled]}>
       {/* Rounded-square toggle (matches Home/habit-tracker's checkbox shape language,
@@ -321,24 +376,61 @@ function EditorRowView({
           {row.name}
         </Text>
         <Text style={[styles.rowMuscle, { color: palette.text.quaternary }]}>{row.muscle}</Text>
-        {!row.custom && row.enabled && row.options.length > 1 && (
+        {!row.custom && row.enabled && (
           <View style={styles.altPillRow}>
-            {row.options.map((opt) => {
-              const active = opt.id === row.selectedId;
-              return (
-                <Pressable
-                  key={opt.id}
-                  style={[
-                    styles.altPill,
-                    { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' },
-                    active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
-                  ]}
-                  onPress={() => onPickAlt(opt.id)}
-                >
-                  <Text style={[styles.altPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{opt.name}</Text>
-                </Pressable>
-              );
-            })}
+            {row.options.length > 1 &&
+              row.options.map((opt) => {
+                const active = opt.id === row.selectedId;
+                return (
+                  <Pressable
+                    key={opt.id}
+                    style={[
+                      styles.altPill,
+                      { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' },
+                      active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+                    ]}
+                    onPress={() => onPickAlt(opt.id)}
+                  >
+                    <Text style={[styles.altPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{opt.name}</Text>
+                  </Pressable>
+                );
+              })}
+            {!addingAlt && (
+              <Pressable
+                style={[styles.altPill, styles.addAltPill, { borderColor: palette.accentText }]}
+                onPress={() => setAddingAlt(true)}
+              >
+                <Text style={[styles.altPillText, { color: palette.accentText }]}>+ Add alternative</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+        {!row.custom && row.enabled && addingAlt && (
+          <View style={styles.addAltForm}>
+            <TextInput
+              style={[styles.addAltInput, styles.addAltInputName, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
+              placeholder="Alternative name"
+              placeholderTextColor={palette.text.faint}
+              value={altName}
+              onChangeText={setAltName}
+              onSubmitEditing={commitAlt}
+              autoFocus
+            />
+            <TextInput
+              style={[styles.addAltInput, styles.addAltInputWeight, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
+              placeholder="lbs"
+              placeholderTextColor={palette.text.faint}
+              keyboardType="numeric"
+              value={altWeight}
+              onChangeText={setAltWeight}
+              onSubmitEditing={commitAlt}
+            />
+            <Pressable style={[styles.addAltBtn, { backgroundColor: palette.accentText }]} onPress={commitAlt}>
+              <Text style={styles.addAltBtnText}>Add</Text>
+            </Pressable>
+            <Pressable hitSlop={6} onPress={() => setAddingAlt(false)}>
+              <Text style={[styles.addAltCancel, { color: palette.text.tertiary }]}>Cancel</Text>
+            </Pressable>
           </View>
         )}
       </View>
@@ -403,6 +495,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#ffffff',
   },
+  labelRow: {
+    marginBottom: spacing.rowGapMd,
+  },
+  labelCaption: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  labelInput: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    fontSize: type.itemTitle.fontSize,
+    fontWeight: '600',
+  },
   listCard: {
     marginBottom: spacing.rowGapMd,
   },
@@ -453,6 +562,46 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   altPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  addAltPill: {
+    backgroundColor: 'transparent',
+    borderStyle: 'dashed',
+  },
+  addAltForm: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  addAltInput: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    fontSize: 12,
+  },
+  addAltInputName: {
+    flexGrow: 1,
+    minWidth: 110,
+  },
+  addAltInputWeight: {
+    width: 56,
+    textAlign: 'center',
+  },
+  addAltBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  addAltBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  addAltCancel: {
     fontSize: 11,
     fontWeight: '600',
   },

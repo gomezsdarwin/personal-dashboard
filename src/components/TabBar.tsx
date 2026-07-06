@@ -52,7 +52,7 @@ const TAB_LABEL: Record<string, string> = {
   index: 'Home',
   gym: 'Gym',
   finance: 'Finance',
-  peptides: 'Peptides',
+  peptides: 'Supplements',
 };
 
 /**
