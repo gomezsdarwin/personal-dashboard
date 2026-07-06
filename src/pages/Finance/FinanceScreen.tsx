@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
 import { GlassChip } from '../../components/GlassChip';
@@ -8,7 +9,30 @@ import { UrgencyPill } from '../../components/UrgencyPill';
 import { useRepo } from '../../hooks/useRepo';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
-import type { NewRow, SubscriptionRow } from '../../lib/types';
+import type { NewRow, SubscriptionCategory, SubscriptionRow } from '../../lib/types';
+
+type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+/** Fixed category set + their icon-font glyphs — replaces the old free-typed category/emoji fields. */
+const CATEGORIES: { key: SubscriptionCategory; label: string; icon: MCIName }[] = [
+  { key: 'Bills', label: 'Bills', icon: 'receipt' },
+  { key: 'Streaming', label: 'Streaming', icon: 'movie-open-outline' },
+  { key: 'Music', label: 'Music', icon: 'music-note' },
+  { key: 'Software', label: 'Software', icon: 'laptop' },
+  { key: 'Fitness', label: 'Fitness', icon: 'dumbbell' },
+  { key: 'Others', label: 'Others', icon: 'dots-horizontal-circle-outline' },
+];
+
+const CATEGORY_ICON: Record<SubscriptionCategory, MCIName> = Object.fromEntries(
+  CATEGORIES.map((c) => [c.key, c.icon])
+) as Record<SubscriptionCategory, MCIName>;
+
+const CATEGORY_KEYS = new Set<string>(CATEGORIES.map((c) => c.key));
+
+/** Legacy/unrecognized category values (pre-dating the fixed union) fall back to 'Others'. */
+function normalizeCategory(value: string): SubscriptionCategory {
+  return (CATEGORY_KEYS.has(value) ? value : 'Others') as SubscriptionCategory;
+}
 
 /** Same-day-offset ISO helper as Phone.dc.html's `iso(n)` — relative to "today". */
 function isoInDays(n: number): string {
@@ -18,15 +42,15 @@ function isoInDays(n: number): string {
   return x.toISOString().slice(0, 10);
 }
 
-/** rawSubs from Phone.dc.html, with `due` (day offset) resolved to a real ISO date. */
+/** rawSubs from Phone.dc.html, remapped onto the fixed category set ("News" has no clean fit -> Others). */
 const SEED_SUBSCRIPTIONS: NewRow<SubscriptionRow>[] = [
-  { name: 'Netflix', category: 'Streaming', amount: 15.49, icon: '🎬', renews_on: isoInDays(9) },
-  { name: 'Spotify', category: 'Music', amount: 10.99, icon: '🎵', renews_on: isoInDays(1) },
-  { name: 'iCloud+', category: 'Software', amount: 2.99, icon: '☁️', renews_on: isoInDays(17) },
-  { name: 'ChatGPT Plus', category: 'Software', amount: 20.0, icon: '🤖', renews_on: isoInDays(4) },
-  { name: 'Equinox', category: 'Fitness', amount: 45.0, icon: '🏋️', renews_on: isoInDays(0) },
-  { name: 'YouTube Premium', category: 'Streaming', amount: 13.99, icon: '📺', renews_on: isoInDays(22) },
-  { name: 'NYT', category: 'News', amount: 4.25, icon: '📰', renews_on: isoInDays(14) },
+  { name: 'Netflix', category: 'Streaming', amount: 15.49, renews_on: isoInDays(9) },
+  { name: 'Spotify', category: 'Music', amount: 10.99, renews_on: isoInDays(1) },
+  { name: 'iCloud+', category: 'Software', amount: 2.99, renews_on: isoInDays(17) },
+  { name: 'ChatGPT Plus', category: 'Software', amount: 20.0, renews_on: isoInDays(4) },
+  { name: 'Equinox', category: 'Fitness', amount: 45.0, renews_on: isoInDays(0) },
+  { name: 'YouTube Premium', category: 'Streaming', amount: 13.99, renews_on: isoInDays(22) },
+  { name: 'NYT', category: 'Others', amount: 4.25, renews_on: isoInDays(14) },
 ];
 
 /** Mirrors Phone.dc.html's `usd`/`usd0` helpers. */
@@ -37,15 +61,21 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function FinanceScreen() {
   const { palette, glass } = useTheme();
-  const { rows, insert, remove } = useRepo('subscriptions', SEED_SUBSCRIPTIONS);
+  const { rows: rawRows, insert, remove } = useRepo('subscriptions', SEED_SUBSCRIPTIONS);
+  const rows = useMemo(() => rawRows.map((r) => ({ ...r, category: normalizeCategory(r.category) })), [rawRows]);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState<SubscriptionCategory>(CATEGORIES[0].key);
   const [amount, setAmount] = useState('');
-  const [icon, setIcon] = useState('');
   const [renewsOn, setRenewsOn] = useState('');
 
   const total = useMemo(() => rows.reduce((sum, s) => sum + s.amount, 0), [rows]);
+
+  const billsTotal = useMemo(
+    () => rows.filter((s) => s.category === 'Bills').reduce((sum, s) => sum + s.amount, 0),
+    [rows]
+  );
+  const subscriptionsTotal = total - billsTotal;
 
   const categories = useMemo(() => {
     const subtotals: Record<string, number> = {};
@@ -59,9 +89,8 @@ export default function FinanceScreen() {
 
   const resetForm = () => {
     setName('');
-    setCategory('');
+    setCategory(CATEGORIES[0].key);
     setAmount('');
-    setIcon('');
     setRenewsOn('');
   };
 
@@ -75,9 +104,8 @@ export default function FinanceScreen() {
 
     await insert({
       name: trimmedName,
-      category: category.trim() || 'Other',
+      category,
       amount: parsedAmount,
-      icon: icon.trim() || '💳',
       renews_on,
     });
     resetForm();
@@ -88,15 +116,23 @@ export default function FinanceScreen() {
 
   return (
     <AppShell>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Finance</Text>
-        <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Subscriptions</Text>
-      </View>
-
-      <HeroCard>
+      <HeroCard style={styles.hero}>
         <Text style={[styles.heroLabel, { color: palette.text.tertiary }]}>Total monthly</Text>
         <Text style={[styles.heroTotal, { color: palette.text.primaryAlt }]}>{usd0(total)}</Text>
         <Text style={[styles.heroCaption, { color: palette.text.quaternary }]}>{rows.length} active subscriptions</Text>
+
+        <View style={[styles.heroBreakdown, { borderTopColor: palette.hairline }]}>
+          <View style={styles.heroBreakdownItem}>
+            <Text style={[styles.heroBreakdownLabel, { color: palette.text.tertiary }]}>Bills</Text>
+            <Text style={[styles.heroBreakdownValue, { color: palette.text.primaryAlt }]}>{usd0(billsTotal)}</Text>
+          </View>
+          <View style={styles.heroBreakdownItem}>
+            <Text style={[styles.heroBreakdownLabel, { color: palette.text.tertiary }]}>Subscriptions</Text>
+            <Text style={[styles.heroBreakdownValue, { color: palette.text.primaryAlt }]}>
+              {usd0(subscriptionsTotal)}
+            </Text>
+          </View>
+        </View>
       </HeroCard>
 
       {categories.length > 0 && (
@@ -131,14 +167,6 @@ export default function FinanceScreen() {
             <View style={styles.form}>
               <View style={styles.formRow}>
                 <TextInput
-                  style={[styles.input, styles.iconInput, inputStyle, { color: palette.text.primary }]}
-                  placeholder="🎬"
-                  placeholderTextColor={palette.text.faint}
-                  value={icon}
-                  onChangeText={setIcon}
-                  maxLength={4}
-                />
-                <TextInput
                   style={[styles.input, styles.flexInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="Name"
                   placeholderTextColor={palette.text.faint}
@@ -146,14 +174,38 @@ export default function FinanceScreen() {
                   onChangeText={setName}
                 />
               </View>
+
+              <View style={styles.categoryPickerRow}>
+                {CATEGORIES.map((cat) => {
+                  const active = category === cat.key;
+                  return (
+                    <Pressable
+                      key={cat.key}
+                      onPress={() => setCategory(cat.key)}
+                      style={[
+                        styles.categoryChip,
+                        { backgroundColor: active ? glass.borderElevated : glass.fill, borderColor: glass.borderBase },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name={cat.icon}
+                        size={15}
+                        color={active ? palette.accentText : palette.text.tertiary}
+                      />
+                      <Text
+                        style={[
+                          styles.categoryChipLabel,
+                          { color: active ? palette.text.primaryAlt : palette.text.tertiary },
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
               <View style={styles.formRow}>
-                <TextInput
-                  style={[styles.input, styles.flexInput, inputStyle, { color: palette.text.primary }]}
-                  placeholder="Category"
-                  placeholderTextColor={palette.text.faint}
-                  value={category}
-                  onChangeText={setCategory}
-                />
                 <TextInput
                   style={[styles.input, styles.amountInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="$0.00"
@@ -162,8 +214,6 @@ export default function FinanceScreen() {
                   onChangeText={setAmount}
                   keyboardType="decimal-pad"
                 />
-              </View>
-              <View style={styles.formRow}>
                 <TextInput
                   style={[styles.input, styles.flexInput, inputStyle, { color: palette.text.primary }]}
                   placeholder="Renews YYYY-MM-DD (optional)"
@@ -182,7 +232,7 @@ export default function FinanceScreen() {
         {rows.map((sub) => (
           <View key={sub.id} style={[styles.row, { borderTopColor: palette.hairline }]}>
             <View style={[styles.iconTile, { backgroundColor: glass.fill }]}>
-              <Text style={styles.iconGlyph}>{sub.icon}</Text>
+              <MaterialCommunityIcons name={CATEGORY_ICON[sub.category]} size={22} color={palette.text.primaryAlt} />
             </View>
             <View style={styles.rowMain}>
               <Text style={[styles.rowName, { color: palette.text.primaryAlt }]}>{sub.name}</Text>
@@ -203,18 +253,8 @@ export default function FinanceScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingVertical: 16,
-    paddingHorizontal: 4,
-  },
-  title: {
-    fontSize: type.screenTitle.fontSize,
-    fontWeight: type.screenTitle.fontWeight,
-    letterSpacing: type.screenTitle.letterSpacing,
-  },
-  subtitle: {
-    fontSize: type.body.fontSize,
-    marginTop: 4,
+  hero: {
+    marginTop: 16,
   },
   heroLabel: {
     fontSize: 14,
@@ -229,6 +269,23 @@ const styles = StyleSheet.create({
   heroCaption: {
     fontSize: 14,
     marginTop: 2,
+  },
+  heroBreakdown: {
+    flexDirection: 'row',
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    gap: 24,
+  },
+  heroBreakdownItem: {
+    gap: 2,
+  },
+  heroBreakdownLabel: {
+    fontSize: type.caption.fontSize,
+  },
+  heroBreakdownValue: {
+    fontSize: type.cardTitle.fontSize,
+    fontWeight: type.cardTitle.fontWeight,
   },
   chipScroller: {
     marginTop: spacing.rowGapMd,
@@ -293,13 +350,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: type.body.fontSize,
   },
-  iconInput: {
-    width: 50,
-    textAlign: 'center',
-    paddingHorizontal: 4,
-  },
   flexInput: {
     flex: 1,
+  },
+  categoryPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+  },
+  categoryChipLabel: {
+    fontSize: type.caption.fontSize,
+    fontWeight: '600',
   },
   amountInput: {
     width: 90,
@@ -329,9 +399,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.iconTile,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconGlyph: {
-    fontSize: 22,
   },
   rowMain: {
     flex: 1,

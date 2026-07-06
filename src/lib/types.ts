@@ -40,9 +40,11 @@ export type GymSessionRow = {
 };
 
 /** One entry in a split's `config` JSONB array. Library entries reference a
- * MUSCLES slot; custom entries carry their own name/weight/muscle inline. */
+ * MUSCLES slot; custom entries carry their own name/weight/muscle inline.
+ * `extraOptions` holds user-added alternatives for a library slot that aren't
+ * part of the static `MUSCLES` library (see workouts.ts's `getSlotOptions`). */
 export type GymSplitConfigEntry =
-  | { slot: string; id: string; custom?: false }
+  | { slot: string; id: string; custom?: false; extraOptions?: { id: string; name: string; defaultWeight: number }[] }
   | { slot: string; id: string; name: string; defaultWeight: number; muscle: string; custom: true };
 
 export type GymSplitConfigRow = {
@@ -51,18 +53,24 @@ export type GymSplitConfigRow = {
   created_at: string;
   split_id: string;
   config: GymSplitConfigEntry[];
+  /** User override for the split's display label; null/absent means "use the
+   * static `SPLITS` label from workouts.ts". */
+  label?: string | null;
 };
+
+export type SubscriptionCategory = 'Bills' | 'Streaming' | 'Music' | 'Software' | 'Fitness' | 'Others';
 
 export type SubscriptionRow = {
   id: string;
   user_id: string;
   created_at: string;
   name: string;
-  category: string;
+  category: SubscriptionCategory;
   amount: number;
-  icon: string;
   renews_on: string | null; // date
 };
+
+export type PeptideKind = 'peptide' | 'supplement';
 
 export type PeptideDoseRow = {
   id: string;
@@ -73,6 +81,7 @@ export type PeptideDoseRow = {
   time_label: string;
   taken: boolean;
   scheduled_for: string; // date
+  kind: PeptideKind;
 };
 
 export type PeptideInventoryRow = {
@@ -84,6 +93,9 @@ export type PeptideInventoryRow = {
   recon: string;
   doses_left: number;
   doses_total: number;
+  kind: PeptideKind;
+  schedule_amount: string;
+  schedule_time_label: string;
 };
 
 export type HabitRow = {

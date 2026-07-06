@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppShell } from '../../components/AppShell';
 import { type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
+import { useRepo } from '../../hooks/useRepo';
 import { SPLITS, todaySplit } from '../../data/workouts';
 import { LogTab } from './LogTab';
 import { StatsTab } from './StatsTab';
@@ -20,9 +21,11 @@ const GYM_TABS: GymSubTab[] = ['LOG', 'STATS', 'GRAPH'];
 export default function GymTab() {
   const { palette } = useTheme();
   const [activeTab, setActiveTab] = useState<GymSubTab>('LOG');
+  const configRepo = useRepo('gym_split_config');
 
   const splitId = todaySplit();
-  const splitLabel = splitId ? SPLITS.find((s) => s.id === splitId)?.label ?? splitId : 'Rest day';
+  const labelOverride = splitId ? configRepo.rows.find((c) => c.split_id === splitId)?.label : null;
+  const splitLabel = splitId ? labelOverride || SPLITS.find((s) => s.id === splitId)?.label || splitId : 'No split selected';
   const dateLabel = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',

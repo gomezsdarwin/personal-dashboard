@@ -21,7 +21,11 @@ export const HEADER_CONTENT_HEIGHT = 64;
  * (theme/opacity/artwork/name live there), so it's kept and styled to match the bell
  * rather than standing out as a mismatched addition.
  */
-export function HeaderBar() {
+type Props = {
+  sectionTitle?: string;
+};
+
+export function HeaderBar({ sectionTitle }: Props) {
   const insets = useSafeAreaInsets();
   const { palette, glass, mode, displayName } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -30,6 +34,8 @@ export function HeaderBar() {
     const trimmed = displayName.trim();
     return trimmed ? trimmed.charAt(0).toUpperCase() : null;
   }, [displayName]);
+
+  const nameText = sectionTitle ?? displayName.trim();
 
   const diag = accent.diagonal();
   const iconBtnBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
@@ -68,9 +74,9 @@ export function HeaderBar() {
                 <MaterialCommunityIcons name="account" size={20} color="#fff" />
               )}
             </LinearGradient>
-            {displayName.trim() ? (
+            {nameText ? (
               <Text style={[styles.name, { color: palette.text.primary }]} numberOfLines={1}>
-                {displayName.trim()}
+                {nameText}
               </Text>
             ) : null}
           </View>

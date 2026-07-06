@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
@@ -101,10 +102,12 @@ export function HistoryModal({
   exercise,
   sessions,
   onClose,
+  onDeleteEntry,
 }: {
   exercise: HistoryModalExercise;
   sessions: GymSessionRow[];
   onClose: () => void;
+  onDeleteEntry: (date: string) => void;
 }) {
   const { palette, glass } = useTheme();
   const [range, setRange] = useState<string>('ALL');
@@ -253,9 +256,11 @@ export function HistoryModal({
                       delta == null ? 'first' : delta === 0 ? '+0' : `${delta > 0 ? '+' : ''}${delta}`;
                     const changeColor = delta == null ? palette.text.tertiary : delta > 0 ? palette.success : delta < 0 ? palette.danger : palette.text.tertiary;
                     return (
-                      <View
+                      <SwipeableHistoryRow
                         key={`${entry.date}-${i}`}
-                        style={[styles.tableRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
+                        bordered={i > 0}
+                        palette={palette}
+                        onDelete={() => onDeleteEntry(entry.date)}
                       >
                         <Text style={[styles.tableCellText, styles.tableColDate, { color: palette.text.secondary }]} numberOfLines={1}>
                           {fmtDate(entry.date)}
@@ -274,7 +279,7 @@ export function HistoryModal({
                         <Text style={[styles.tableCellText, styles.tableColChange, { color: changeColor }]}>
                           {changeLabel}
                         </Text>
-                      </View>
+                      </SwipeableHistoryRow>
                     );
                   })}
                 </View>
@@ -302,6 +307,75 @@ function StatTile({
     <View style={[styles.statTile, { backgroundColor: 'rgba(120,110,150,0.08)' }]}>
       <Text style={[styles.statTileLabel, { color: palette.text.tertiary }]}>{label}</Text>
       <Text style={[styles.statTileValue, { color: valueColor ?? palette.text.primaryAlt }]}>{value}</Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SwipeableHistoryRow — swipe-left-to-reveal-delete on a session table row.
+// Built on the built-in PanResponder (no new gesture-handler dependency in
+// this project) rather than react-native-gesture-handler.
+// ---------------------------------------------------------------------------
+
+const DELETE_WIDTH = 72;
+
+function SwipeableHistoryRow({
+  bordered,
+  palette,
+  onDelete,
+  children,
+}: {
+  bordered: boolean;
+  palette: Palette;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const openOffset = useRef(0);
+  const deleteTranslateX = useRef(Animated.add(translateX, DELETE_WIDTH)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+      onPanResponderMove: (_, gesture) => {
+        const next = Math.min(0, Math.max(-DELETE_WIDTH, openOffset.current + gesture.dx));
+        translateX.setValue(next);
+      },
+      onPanResponderRelease: (_, gesture) => {
+        const next = Math.min(0, Math.max(-DELETE_WIDTH, openOffset.current + gesture.dx));
+        openOffset.current = next < -DELETE_WIDTH / 2 ? -DELETE_WIDTH : 0;
+        Animated.spring(translateX, { toValue: openOffset.current, useNativeDriver: true, bounciness: 0 }).start();
+      },
+    })
+  ).current;
+
+  function handleDelete() {
+    openOffset.current = 0;
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+    onDelete();
+  }
+
+  return (
+    <View style={styles.swipeWrap}>
+      <Animated.View
+        style={[styles.deleteAction, { backgroundColor: palette.danger, transform: [{ translateX: deleteTranslateX }] }]}
+      >
+        <Pressable style={styles.deleteActionPressable} onPress={handleDelete}>
+          <MaterialCommunityIcons name="trash-can-outline" size={18} color="#ffffff" />
+        </Pressable>
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.tableRow,
+          { backgroundColor: 'rgba(120,110,150,0.05)' },
+          bordered && { borderTopWidth: 1, borderTopColor: palette.hairline },
+          { transform: [{ translateX }] },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
     </View>
   );
 }
@@ -590,15 +664,16 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
     overflow: 'hidden',
-    maxHeight: '88%',
+    height: '92%',
   },
   sheet: {
+    flex: 1,
     paddingHorizontal: spacing.screenSide,
     paddingTop: 12,
     paddingBottom: 40,
   },
   scrollBody: {
-    flexGrow: 0,
+    flex: 1,
   },
   handle: {
     alignSelf: 'center',
@@ -751,6 +826,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 9,
     paddingHorizontal: 12,
+  },
+  swipeWrap: {
+    overflow: 'hidden',
+  },
+  deleteAction: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: DELETE_WIDTH,
+  },
+  deleteActionPressable: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tableCellText: {
     fontSize: 12,

@@ -45,8 +45,9 @@ export function HabitTrackerCard() {
   } = useRepo('habit_completions', []);
 
   const [newHabitName, setNewHabitName] = useState('');
+  const [addHabitOpen, setAddHabitOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [statsHabitId, setStatsHabitId] = useState<string | 'all' | null>(null);
+  const [statsHabitId, setStatsHabitId] = useState<string | null>(null);
 
   const todayIso = useMemo(() => toIsoDate(new Date()), []);
   const currentWeekStart = useMemo(() => weekStartIso(new Date()), []);
@@ -74,6 +75,11 @@ export function HabitTrackerCard() {
     const name = newHabitName.trim();
     if (!name) return;
     insertHabit({ name, favorite: false, position: habits.length });
+    setNewHabitName('');
+  };
+
+  const closeAddHabit = () => {
+    setAddHabitOpen(false);
     setNewHabitName('');
   };
 
@@ -232,25 +238,46 @@ export function HabitTrackerCard() {
           ))
         )}
 
-        <View style={styles.addRow}>
-          <TextInput
-            value={newHabitName}
-            onChangeText={setNewHabitName}
-            onSubmitEditing={handleAddHabit}
-            returnKeyType="done"
-            placeholder="+ New habit…"
-            placeholderTextColor={palette.text.quaternary}
-            style={[styles.input, inputStyle, { color: palette.text.primary }]}
-          />
+        {addHabitOpen ? (
+          <View style={styles.addRow}>
+            <TextInput
+              autoFocus
+              value={newHabitName}
+              onChangeText={setNewHabitName}
+              onSubmitEditing={handleAddHabit}
+              returnKeyType="done"
+              placeholder="New habit…"
+              placeholderTextColor={palette.text.quaternary}
+              style={[styles.input, inputStyle, { color: palette.text.primary }]}
+            />
+            <Pressable
+              onPress={handleAddHabit}
+              style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+              accessibilityRole="button"
+              accessibilityLabel="Add habit"
+            >
+              <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
+            </Pressable>
+            <Pressable
+              onPress={closeAddHabit}
+              style={styles.closeAddButton}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel adding habit"
+            >
+              <MaterialCommunityIcons name="close" size={18} color={palette.text.faint} />
+            </Pressable>
+          </View>
+        ) : (
           <Pressable
-            onPress={handleAddHabit}
-            style={[styles.addButton, { backgroundColor: iconBtnBg }]}
+            onPress={() => setAddHabitOpen(true)}
+            style={styles.addTrigger}
             accessibilityRole="button"
             accessibilityLabel="Add habit"
           >
-            <MaterialCommunityIcons name="plus-circle" size={26} color={palette.accentText} />
+            <MaterialCommunityIcons name="plus-circle" size={22} color={palette.accentText} />
+            <Text style={[styles.addTriggerLabel, { color: palette.text.secondary }]}>New habit…</Text>
           </Pressable>
-        </View>
+        )}
       </GlassCard>
 
       <HabitStatsModal
@@ -376,6 +403,23 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 2,
     paddingTop: 12,
+  },
+  addTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 2,
+    paddingTop: 12,
+  },
+  addTriggerLabel: {
+    fontSize: typeScale.body.fontSize,
+    fontWeight: typeScale.bodyMedium.fontWeight,
+  },
+  closeAddButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   input: {
     flex: 1,

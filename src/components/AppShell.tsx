@@ -9,6 +9,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSegments } from 'expo-router';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../theme/ThemeContext';
 import { artworks, defaultArtwork } from '../data/artworks';
@@ -17,6 +18,15 @@ import { HeaderBar, HEADER_CONTENT_HEIGHT } from './HeaderBar';
 type Props = {
   children?: React.ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+};
+
+/** Route segment (matches the `<Tabs.Screen name="...">` in app/(tabs)/_layout.tsx) to
+ *  the section title shown in HeaderBar in place of the display name. Home is
+ *  intentionally absent — it keeps HeaderBar's default displayName behavior. */
+const SECTION_TITLE: Record<string, string> = {
+  gym: 'Workouts',
+  finance: 'Finance',
+  peptides: 'Supplements',
 };
 
 /**
@@ -33,6 +43,8 @@ type Props = {
 export function AppShell({ children, contentStyle }: Props) {
   const insets = useSafeAreaInsets();
   const { glass, artworkId } = useTheme();
+  const segments = useSegments();
+  const sectionTitle = SECTION_TITLE[segments[segments.length - 1] ?? ''];
   const activeArtwork = useMemo(
     () => artworks.find((a) => a.id === artworkId) ?? defaultArtwork,
     [artworkId]
@@ -72,7 +84,7 @@ export function AppShell({ children, contentStyle }: Props) {
         <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>
       </ScrollView>
 
-      <HeaderBar />
+      <HeaderBar sectionTitle={sectionTitle} />
     </View>
   );
 }

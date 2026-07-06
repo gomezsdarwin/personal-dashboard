@@ -2,13 +2,10 @@ import React, { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Defs, LinearGradient as SvgLinearGradient, Rect, Stop, Svg } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { fmt } from '../../lib/dueDate';
 import type { HabitCompletionRow, HabitRow } from '../../lib/types';
-import { addDaysIso, weekDayIsos, weekStartIso } from '../../lib/week';
-import { accent } from '../../theme/accent';
-import { radius } from '../../theme/tokens';
+import { addDaysIso, toIsoDate, weekDayIsos, weekStartIso } from '../../lib/week';
+import { accentPalettes, radius } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 
 type Props = {
@@ -16,17 +13,31 @@ type Props = {
   onClose: () => void;
   habits: HabitRow[];
   completions: HabitCompletionRow[];
-  selectedHabitId: string | 'all' | null;
-  onSelectHabit: (id: string | 'all') => void;
+  selectedHabitId: string | null;
+  onSelectHabit: (id: string) => void;
 };
 
-const WEEKS_BACK = 8; // includes the current in-progress week.
+// 28 weeks x 7 days ~= 6 months, matching the reference mockup's grid dimensions.
+const GRID_WEEKS = 28;
+const GRID_CELL = 7;
+const GRID_GAP = 2;
+
+// Each habit's grid uses a deterministic color from the app's existing accent palette
+// set (no per-habit color field on HabitRow), so the same habit always renders the
+// same shade across opens.
+const HABIT_GRID_COLORS = Object.values(accentPalettes).map((pair) => pair[0]);
+
+function habitColorFor(habitId: string): string {
+  let hash = 0;
+  for (let i = 0; i < habitId.length; i += 1) {
+    hash = (hash * 31 + habitId.charCodeAt(i)) >>> 0;
+  }
+  return HABIT_GRID_COLORS[hash % HABIT_GRID_COLORS.length];
+}
 
 /**
- * HabitStatsModal — bottom-sheet chart (weekly completion-rate over the past 8 weeks,
- * per-habit or "All" aggregate). SVG bar chart follows GraphTab.tsx's conventions:
- * <Svg> geometry only, RN <Text> overlays for axis/value labels, vertical accent
- * gradient fill built the same way as GraphTab's Defs/LinearGradient/Stop.
+ * HabitStatsModal — near-full-screen bottom sheet showing a GitHub-contribution-style
+ * grid (28 weeks x 7 days) of one habit's completion history at a time.
  */
 export function HabitStatsModal({
   visible,
@@ -44,32 +55,9 @@ export function HabitStatsModal({
     [completions]
   );
 
-  // Oldest -> newest week starts, ending at the current (in-progress) week.
-  const weekStarts = useMemo(() => {
-    const currentStart = weekStartIso(new Date());
-    return Array.from({ length: WEEKS_BACK }, (_, i) => addDaysIso(currentStart, -7 * (WEEKS_BACK - 1 - i)));
-  }, []);
+  const todayIso = useMemo(() => toIsoDate(new Date()), []);
 
-  const rates = useMemo(() => {
-    return weekStarts.map((start) => {
-      const days = weekDayIsos(start);
-      if (selectedHabitId === 'all') {
-        if (habits.length === 0) return 0;
-        const avg =
-          habits.reduce((sum, h) => {
-            const done = days.filter((d) => completionSet.has(`${h.id}|${d}`)).length;
-            return sum + done / 7;
-          }, 0) / habits.length;
-        return avg * 100;
-      }
-      if (!selectedHabitId) return 0;
-      const done = days.filter((d) => completionSet.has(`${selectedHabitId}|${d}`)).length;
-      return (done / 7) * 100;
-    });
-  }, [weekStarts, selectedHabitId, habits, completionSet]);
-
-  const activeHabitName =
-    selectedHabitId === 'all' ? 'All habits' : habits.find((h) => h.id === selectedHabitId)?.name ?? '';
+  const activeHabitName = habits.find((h) => h.id === selectedHabitId)?.name ?? '';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -103,13 +91,6 @@ export function HabitStatsModal({
                   style={styles.chipScroll}
                   contentContainerStyle={styles.chipRow}
                 >
-                  {habits.length > 1 && (
-                    <Chip
-                      label="All"
-                      active={selectedHabitId === 'all'}
-                      onPress={() => onSelectHabit('all')}
-                    />
-                  )}
                   {habits.map((h) => (
                     <Chip
                       key={h.id}
@@ -124,11 +105,14 @@ export function HabitStatsModal({
                   <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]} numberOfLines={1}>
                     {activeHabitName}
                   </Text>
-                  <Text style={[styles.chartSubtitle, { color: palette.text.quaternary }]}>
-                    Weekly completion rate — last {WEEKS_BACK} weeks
-                  </Text>
 
-                  <BarChart weekStarts={weekStarts} rates={rates} />
+                  {selectedHabitId ? (
+                    <ContributionGrid
+                      habitId={selectedHabitId}
+                      completionSet={completionSet}
+                      todayIso={todayIso}
+                    />
+                  ) : null}
                 </ScrollView>
               </>
             )}
@@ -163,93 +147,60 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
 }
 
 // ---------------------------------------------------------------------------
-// BarChart — inline SVG bar chart, mirrors GraphTab.tsx's LineChart conventions:
-// Svg geometry only, RN <Text> overlays for axis labels (more reliable font
-// metrics cross-platform than SVG <Text>).
+// ContributionGrid — plain-View grid of small squares, one per day over the past
+// GRID_WEEKS weeks (columns = weeks, rows = Mon..Sun within each column), filled with
+// the habit's accent color when completed. Plain Views (not SVG) since this is a
+// static grid with no curves/gradients to justify SVG overhead.
 // ---------------------------------------------------------------------------
 
-const CW = 320;
-const CH = 170;
-const PAD = { t: 22, r: 8, b: 30, l: 8 };
+function ContributionGrid({
+  habitId,
+  completionSet,
+  todayIso,
+}: {
+  habitId: string;
+  completionSet: Set<string>;
+  todayIso: string;
+}) {
+  const { palette, mode } = useTheme();
+  const color = useMemo(() => habitColorFor(habitId), [habitId]);
+  const cellInactiveBg = mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const cellInactiveBorder = mode === 'dark' ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)';
 
-function BarChart({ weekStarts, rates }: { weekStarts: string[]; rates: number[] }) {
-  const { palette } = useTheme();
-  const vert = accent.vertical();
-
-  const plotW = CW - PAD.l - PAD.r;
-  const plotH = CH - PAD.t - PAD.b;
-  const n = weekStarts.length;
-  const gap = 8;
-  const barW = (plotW - gap * (n - 1)) / n;
+  const weekStarts = useMemo(() => {
+    const currentStart = weekStartIso(new Date());
+    return Array.from({ length: GRID_WEEKS }, (_, i) => addDaysIso(currentStart, -7 * (GRID_WEEKS - 1 - i)));
+  }, []);
 
   return (
-    <View style={{ width: CW, height: CH }}>
-      <Svg width={CW} height={CH}>
-        <Defs>
-          <SvgLinearGradient id="habitBarFill" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={vert.colors[0]} stopOpacity={0.95} />
-            <Stop offset="1" stopColor={vert.colors[1]} stopOpacity={0.55} />
-          </SvgLinearGradient>
-        </Defs>
-
-        {/* Baseline */}
-        <Rect x={PAD.l} y={PAD.t + plotH} width={plotW} height={1} fill={palette.hairline} />
-
-        {weekStarts.map((_, i) => {
-          const rate = rates[i] ?? 0;
-          const barH = Math.max((rate / 100) * plotH, rate > 0 ? 3 : 0);
-          const x = PAD.l + i * (barW + gap);
-          const y = PAD.t + plotH - barH;
-          return (
-            <Rect
-              key={i}
-              x={x}
-              y={y}
-              width={barW}
-              height={barH}
-              rx={5}
-              fill="url(#habitBarFill)"
-            />
-          );
-        })}
-      </Svg>
-
-      {/* Value labels above each bar */}
-      {weekStarts.map((_, i) => {
-        const rate = rates[i] ?? 0;
-        const barH = Math.max((rate / 100) * plotH, rate > 0 ? 3 : 0);
-        const x = PAD.l + i * (barW + gap);
-        const y = PAD.t + plotH - barH;
-        return (
-          <Text
-            key={i}
-            style={[
-              styles.barValueLabel,
-              { left: x - 6, width: barW + 12, top: Math.max(0, y - 16), color: palette.text.tertiary },
-            ]}
-            numberOfLines={1}
-          >
-            {Math.round(rate)}%
-          </Text>
-        );
-      })}
-
-      {/* Week-start labels below each bar */}
-      {weekStarts.map((iso, i) => {
-        const x = PAD.l + i * (barW + gap);
-        return (
-          <Text
-            key={iso}
-            style={[
-              styles.barDateLabel,
-              { left: x - 8, width: barW + 16, top: PAD.t + plotH + 6, color: palette.text.tertiary },
-            ]}
-            numberOfLines={1}
-          >
-            {fmt(iso)}
-          </Text>
-        );
-      })}
+    <View style={styles.gridWrap}>
+      <View style={styles.gridRow}>
+        {weekStarts.map((weekStart) => (
+          <View key={weekStart} style={styles.gridColumn}>
+            {weekDayIsos(weekStart).map((iso) => {
+              const isFuture = iso > todayIso;
+              const completed = !isFuture && completionSet.has(`${habitId}|${iso}`);
+              return (
+                <View
+                  key={iso}
+                  style={[
+                    styles.gridCell,
+                    isFuture
+                      ? styles.gridCellFuture
+                      : completed
+                      ? { backgroundColor: color, borderColor: color }
+                      : { backgroundColor: cellInactiveBg, borderColor: cellInactiveBorder },
+                  ]}
+                />
+              );
+            })}
+          </View>
+        ))}
+      </View>
+      <View style={styles.gridCaptionRow}>
+        <Text style={[styles.gridCaption, { color: palette.text.quaternary }]}>Last 6 Months</Text>
+        <Text style={[styles.gridCaption, { color: palette.text.quaternary }]}>Today</Text>
+      </View>
     </View>
   );
 }
@@ -264,7 +215,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    height: '62%',
+    height: '93%',
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
     overflow: 'hidden',
@@ -320,22 +271,35 @@ const styles = StyleSheet.create({
   chartTitle: {
     fontSize: 17,
     fontWeight: '700',
-  },
-  chartSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
     marginBottom: 14,
   },
-  barValueLabel: {
-    position: 'absolute',
-    fontSize: 10,
-    fontWeight: '700',
-    textAlign: 'center',
+  gridWrap: {
+    paddingBottom: 24,
   },
-  barDateLabel: {
-    position: 'absolute',
-    fontSize: 9,
-    textAlign: 'center',
+  gridRow: {
+    flexDirection: 'row',
+    gap: GRID_GAP,
+  },
+  gridColumn: {
+    gap: GRID_GAP,
+  },
+  gridCell: {
+    width: GRID_CELL,
+    height: GRID_CELL,
+    borderRadius: 2,
+    borderWidth: 1,
+  },
+  gridCellFuture: {
+    opacity: 0,
+  },
+  gridCaptionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  gridCaption: {
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 

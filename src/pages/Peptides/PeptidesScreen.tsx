@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,14 +8,16 @@ import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme, withAlpha } from '../../theme/ThemeContext';
 import { accent } from '../../theme/accent';
 import { useRepo } from '../../hooks/useRepo';
-import type { NewRow, PeptideDoseRow, PeptideInventoryRow } from '../../lib/types';
+import type { NewRow, PeptideDoseRow, PeptideInventoryRow, PeptideKind } from '../../lib/types';
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
 const seedDoses: NewRow<PeptideDoseRow>[] = [
-  { name: 'BPC-157', amount: '250 mcg · SubQ', time_label: '8:00 AM', taken: true, scheduled_for: todayIso() },
-  { name: 'Ipamorelin', amount: '200 mcg · SubQ', time_label: '10:00 PM', taken: false, scheduled_for: todayIso() },
-  { name: 'TB-500', amount: '2 mg · weekly', time_label: 'Sun', taken: false, scheduled_for: todayIso() },
+  { name: 'BPC-157', amount: '250 mcg · SubQ', time_label: '8:00 AM', taken: true, scheduled_for: todayIso(), kind: 'peptide' },
+  { name: 'Ipamorelin', amount: '200 mcg · SubQ', time_label: '10:00 PM', taken: false, scheduled_for: todayIso(), kind: 'peptide' },
+  { name: 'TB-500', amount: '2 mg · weekly', time_label: 'Sun', taken: false, scheduled_for: todayIso(), kind: 'peptide' },
+  { name: 'Creatine', amount: '5 g · with breakfast', time_label: '8:00 AM', taken: false, scheduled_for: todayIso(), kind: 'supplement' },
+  { name: 'Ashwagandha', amount: '600 mg', time_label: '9:00 PM', taken: false, scheduled_for: todayIso(), kind: 'supplement' },
 ];
 
 const seedInventory: NewRow<PeptideInventoryRow>[] = [
@@ -25,6 +27,9 @@ const seedInventory: NewRow<PeptideInventoryRow>[] = [
     recon: '5 mg vial · 2 mL BAC → 250 mcg = 0.10 mL',
     doses_left: 38,
     doses_total: 50,
+    kind: 'peptide',
+    schedule_amount: '250 mcg · SubQ',
+    schedule_time_label: '8:00 AM',
   },
   {
     name: 'Ipamorelin',
@@ -32,6 +37,9 @@ const seedInventory: NewRow<PeptideInventoryRow>[] = [
     recon: '5 mg vial · 2.5 mL BAC → 200 mcg = 0.10 mL',
     doses_left: 14,
     doses_total: 50,
+    kind: 'peptide',
+    schedule_amount: '200 mcg · SubQ',
+    schedule_time_label: '10:00 PM',
   },
   {
     name: 'TB-500',
@@ -39,48 +47,171 @@ const seedInventory: NewRow<PeptideInventoryRow>[] = [
     recon: '5 mg vial · 2 mL BAC → 2 mg = 0.80 mL',
     doses_left: 7,
     doses_total: 8,
+    kind: 'peptide',
+    schedule_amount: '2 mg · weekly',
+    schedule_time_label: 'Sun',
+  },
+  {
+    name: 'Creatine',
+    vials: 1,
+    recon: '5 g scoop · 1 tub = 60 servings',
+    doses_left: 45,
+    doses_total: 60,
+    kind: 'supplement',
+    schedule_amount: '5 g · with breakfast',
+    schedule_time_label: '8:00 AM',
+  },
+  {
+    name: 'Ashwagandha',
+    vials: 1,
+    recon: '600 mg capsule · 1 bottle = 60 caps',
+    doses_left: 22,
+    doses_total: 60,
+    kind: 'supplement',
+    schedule_amount: '600 mg',
+    schedule_time_label: '9:00 PM',
   },
 ];
+
+const KIND_LABEL: Record<PeptideKind, string> = { peptide: 'Peptides', supplement: 'Supplements' };
+const KIND_ORDER: PeptideKind[] = ['peptide', 'supplement'];
+
+type KindGroup<T> = { kind: PeptideKind; items: T[] };
+
+/** Splits a flat row list into peptide/supplement groups (in that order),
+ * dropping any group with no rows — used to render both lists with a light
+ * "Peptides" / "Supplements" caption between subsections, without splitting
+ * them into separate cards. */
+function groupByKind<T extends { kind: PeptideKind }>(rows: T[]): KindGroup<T>[] {
+  return KIND_ORDER.map((kind) => ({ kind, items: rows.filter((row) => row.kind === kind) })).filter(
+    (group) => group.items.length > 0
+  );
+}
+
+/** Rows persisted before `kind` existed have no such field; treat missing/falsy
+ * `kind` as 'peptide' (the pre-existing default) so they don't vanish from both groups. */
+function normalizeKind<T extends { kind: PeptideKind }>(rows: T[]): T[] {
+  return rows.map((row) => (row.kind ? row : { ...row, kind: 'peptide' }));
+}
 
 /**
  * Peptides — dose schedule + inventory. Ports Phone.dc.html's PEPTIDES screen:
  * a "Today's schedule" glass card of toggleable doses, and one glass inventory
  * card per compound with a recon note + doses-remaining progress bar.
+ *
+ * Scheduling now lives entirely on the inventory item: editing a compound's
+ * schedule (amount + time) upserts today's `peptide_doses` row for that
+ * compound by name; there is no more freestanding "add a dose" form.
  */
 export default function PeptidesScreen() {
-  const { palette } = useTheme();
+  const { palette, glass } = useTheme();
   const doses = useRepo('peptide_doses', seedDoses);
   const inventory = useRepo('peptide_inventory', seedInventory);
+  const [showAddInventory, setShowAddInventory] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const doseGroups = useMemo(() => groupByKind(normalizeKind(doses.rows)), [doses.rows]);
+  const inventoryGroups = useMemo(() => groupByKind(normalizeKind(inventory.rows)), [inventory.rows]);
+
+  const handleScheduleSave = async (item: PeptideInventoryRow, amount: string, timeLabel: string) => {
+    const trimmedAmount = amount.trim();
+    const trimmedTime = timeLabel.trim();
+    await inventory.update(item.id, { schedule_amount: trimmedAmount, schedule_time_label: trimmedTime });
+
+    const today = todayIso();
+    const existing = doses.rows.find((dose) => dose.name === item.name && dose.scheduled_for === today);
+
+    if (!trimmedAmount && !trimmedTime) {
+      if (existing) await doses.remove(existing.id);
+      setEditingId(null);
+      return;
+    }
+
+    if (existing) {
+      await doses.update(existing.id, { amount: trimmedAmount, time_label: trimmedTime, kind: item.kind });
+    } else {
+      await doses.insert({
+        name: item.name,
+        amount: trimmedAmount,
+        time_label: trimmedTime,
+        taken: false,
+        scheduled_for: today,
+        kind: item.kind,
+      });
+    }
+    setEditingId(null);
+  };
 
   return (
     <AppShell>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: palette.text.primaryAlt }]}>Peptides</Text>
         <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Schedule & inventory</Text>
       </View>
 
       <GlassCard style={styles.sectionGap}>
         <Text style={[styles.cardTitle, { color: palette.text.primary }]}>Today&apos;s schedule</Text>
         <View style={styles.doseList}>
-          {doses.rows.map((dose) => (
-            <DoseRow
-              key={dose.id}
-              dose={dose}
-              onToggle={() => doses.update(dose.id, { taken: !dose.taken })}
-              onRemove={() => doses.remove(dose.id)}
-            />
+          {doseGroups.map((group, index) => (
+            <View key={group.kind}>
+              {index > 0 ? <View style={[styles.groupDivider, { backgroundColor: palette.hairline }]} /> : null}
+              <Text style={[styles.groupLabel, { color: palette.text.tertiary }]}>{KIND_LABEL[group.kind]}</Text>
+              <View style={styles.doseGroupList}>
+                {group.items.map((dose) => (
+                  <DoseRow key={dose.id} dose={dose} onToggle={() => doses.update(dose.id, { taken: !dose.taken })} />
+                ))}
+              </View>
+            </View>
           ))}
           {doses.rows.length === 0 && !doses.loading ? (
-            <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No doses scheduled.</Text>
+            <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>
+              No doses scheduled. Set a schedule on an inventory item below.
+            </Text>
           ) : null}
         </View>
-        <AddDoseForm onAdd={(row) => doses.insert(row)} />
       </GlassCard>
 
-      <Text style={[styles.sectionLabel, { color: palette.text.primary }]}>Inventory</Text>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={[styles.sectionLabel, { color: palette.text.primary }]}>Inventory</Text>
+        <Pressable
+          onPress={() => setShowAddInventory((v) => !v)}
+          hitSlop={8}
+          style={[styles.addToggleBtn, { backgroundColor: glass.fill }]}
+          accessibilityRole="button"
+          accessibilityLabel={showAddInventory ? 'Cancel adding compound' : 'Add compound'}
+        >
+          <Text style={[styles.addToggleGlyph, { color: palette.text.primaryAlt }]}>{showAddInventory ? '×' : '+'}</Text>
+        </Pressable>
+      </View>
+
+      {showAddInventory ? (
+        <GlassCard style={styles.sectionGap}>
+          <AddInventoryForm
+            onAdd={(row) => {
+              inventory.insert(row);
+              setShowAddInventory(false);
+            }}
+          />
+        </GlassCard>
+      ) : null}
+
       <View style={styles.inventoryList}>
-        {inventory.rows.map((item) => (
-          <InventoryCard key={item.id} item={item} onRemove={() => inventory.remove(item.id)} />
+        {inventoryGroups.map((group, index) => (
+          <View key={group.kind} style={styles.inventoryGroup}>
+            {index > 0 ? <View style={[styles.groupDivider, { backgroundColor: palette.hairline }]} /> : null}
+            <Text style={[styles.groupLabel, { color: palette.text.tertiary }]}>{KIND_LABEL[group.kind]}</Text>
+            <View style={styles.inventoryGroupList}>
+              {group.items.map((item) => (
+                <InventoryCard
+                  key={item.id}
+                  item={item}
+                  isEditing={editingId === item.id}
+                  onToggleEdit={() => setEditingId((cur) => (cur === item.id ? null : item.id))}
+                  onSaveSchedule={(amount, timeLabel) => handleScheduleSave(item, amount, timeLabel)}
+                  onRemove={() => inventory.remove(item.id)}
+                />
+              ))}
+            </View>
+          </View>
         ))}
         {inventory.rows.length === 0 && !inventory.loading ? (
           <GlassCard>
@@ -88,22 +219,11 @@ export default function PeptidesScreen() {
           </GlassCard>
         ) : null}
       </View>
-      <GlassCard style={styles.sectionGap}>
-        <AddInventoryForm onAdd={(row) => inventory.insert(row)} />
-      </GlassCard>
     </AppShell>
   );
 }
 
-function DoseRow({
-  dose,
-  onToggle,
-  onRemove,
-}: {
-  dose: PeptideDoseRow;
-  onToggle: () => void;
-  onRemove: () => void;
-}) {
+function DoseRow({ dose, onToggle }: { dose: PeptideDoseRow; onToggle: () => void }) {
   const { palette, mode } = useTheme();
   // Unchecked: border-white/30 + bg-white/5 (dark) — checked: border-primary +
   // bg-primary/30 tinted fill, matching sampleindex.html's task checkboxes exactly.
@@ -138,91 +258,59 @@ function DoseRow({
         <Text style={[styles.doseAmount, { color: palette.text.tertiary }]}>{dose.amount}</Text>
       </View>
       <Text style={[styles.doseTime, { color: palette.text.quaternary }]}>{dose.time_label}</Text>
-      <Pressable onPress={onRemove} hitSlop={8} style={styles.removeBtn}>
-        <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
-      </Pressable>
     </View>
   );
 }
 
-function AddDoseForm({ onAdd }: { onAdd: (row: NewRow<PeptideDoseRow>) => void }) {
+function InventoryCard({
+  item,
+  isEditing,
+  onToggleEdit,
+  onSaveSchedule,
+  onRemove,
+}: {
+  item: PeptideInventoryRow;
+  isEditing: boolean;
+  onToggleEdit: () => void;
+  onSaveSchedule: (amount: string, timeLabel: string) => void;
+  onRemove: () => void;
+}) {
   const { palette, glass } = useTheme();
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [timeLabel, setTimeLabel] = useState('');
+  const [amount, setAmount] = useState(item.schedule_amount);
+  const [timeLabel, setTimeLabel] = useState(item.schedule_time_label);
 
-  const submit = () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return;
-    onAdd({
-      name: trimmedName,
-      amount: amount.trim(),
-      time_label: timeLabel.trim(),
-      taken: false,
-      scheduled_for: todayIso(),
-    });
-    setName('');
-    setAmount('');
-    setTimeLabel('');
-  };
+  useEffect(() => {
+    if (isEditing) {
+      setAmount(item.schedule_amount);
+      setTimeLabel(item.schedule_time_label);
+    }
+  }, [isEditing, item.schedule_amount, item.schedule_time_label]);
 
-  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
-
-  return (
-    <View style={styles.addRow}>
-      <TextInput
-        style={[styles.input, styles.inputName, inputStyle]}
-        placeholder="Name"
-        placeholderTextColor={palette.text.faint}
-        value={name}
-        onChangeText={setName}
-        onSubmitEditing={submit}
-      />
-      <TextInput
-        style={[styles.input, styles.inputAmount, inputStyle]}
-        placeholder="Amount · route"
-        placeholderTextColor={palette.text.faint}
-        value={amount}
-        onChangeText={setAmount}
-        onSubmitEditing={submit}
-      />
-      <TextInput
-        style={[styles.input, styles.inputTime, inputStyle]}
-        placeholder="Time"
-        placeholderTextColor={palette.text.faint}
-        value={timeLabel}
-        onChangeText={setTimeLabel}
-        onSubmitEditing={submit}
-      />
-      <Pressable onPress={submit} hitSlop={8} style={styles.addBtnWrap}>
-        <LinearGradient
-          colors={accent.default}
-          start={accent.diagonal().start}
-          end={accent.diagonal().end}
-          style={styles.addBtn}
-        >
-          <Text style={styles.addBtnGlyph}>+</Text>
-        </LinearGradient>
-      </Pressable>
-    </View>
-  );
-}
-
-function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove: () => void }) {
-  const { palette } = useTheme();
   const pct = useMemo(() => {
     if (item.doses_total <= 0) return 0;
     return Math.max(0, Math.min(100, (item.doses_left / item.doses_total) * 100));
   }, [item.doses_left, item.doses_total]);
   const gradient = accent.horizontal();
+  const hasSchedule = !!(item.schedule_amount || item.schedule_time_label);
+  const onHandLabel = item.kind === 'supplement' ? 'on hand' : 'vials on hand';
+  const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
 
   return (
     <GlassCard radius={radius.inventoryCard} style={styles.inventoryCardGap} contentStyle={styles.inventoryContent}>
       <View style={styles.inventoryHeaderRow}>
         <Text style={[styles.inventoryName, { color: palette.text.primary }]}>{item.name}</Text>
-        <Text style={[styles.inventoryVials, { color: palette.text.tertiary }]}>{item.vials} vials on hand</Text>
+        <Text style={[styles.inventoryVials, { color: palette.text.tertiary }]}>
+          {item.vials} {onHandLabel}
+        </Text>
       </View>
       <Text style={[styles.inventoryRecon, { color: palette.text.quaternary }]}>{item.recon}</Text>
+      {hasSchedule ? (
+        <Text style={[styles.scheduleSummary, { color: palette.text.tertiary }]}>
+          Scheduled · {[item.schedule_amount, item.schedule_time_label].filter(Boolean).join(' · ')}
+        </Text>
+      ) : (
+        <Text style={[styles.scheduleSummary, { color: palette.text.faint }]}>Not scheduled</Text>
+      )}
       <View style={[styles.progressTrack, { backgroundColor: palette.track }]}>
         <LinearGradient
           colors={gradient.colors}
@@ -233,10 +321,50 @@ function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove
       </View>
       <View style={styles.inventoryFooterRow}>
         <Text style={[styles.inventoryCaption, { color: palette.text.tertiary }]}>{item.doses_left} doses remaining</Text>
-        <Pressable onPress={onRemove} hitSlop={8} style={styles.removeBtn}>
-          <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
-        </Pressable>
+        <View style={styles.inventoryActions}>
+          <Pressable
+            onPress={onToggleEdit}
+            hitSlop={8}
+            style={styles.iconBtn}
+            accessibilityRole="button"
+            accessibilityLabel={isEditing ? 'Cancel editing schedule' : 'Edit schedule'}
+          >
+            <MaterialCommunityIcons
+              name={isEditing ? 'close' : 'pencil-outline'}
+              size={16}
+              color={palette.text.faint}
+            />
+          </Pressable>
+          <Pressable onPress={onRemove} hitSlop={8} style={styles.removeBtn}>
+            <Text style={[styles.removeGlyph, { color: palette.text.faint }]}>×</Text>
+          </Pressable>
+        </View>
       </View>
+      {isEditing ? (
+        <View style={styles.scheduleForm}>
+          <TextInput
+            style={[styles.input, styles.inputAmount, inputStyle]}
+            placeholder="Amount · route"
+            placeholderTextColor={palette.text.faint}
+            value={amount}
+            onChangeText={setAmount}
+          />
+          <TextInput
+            style={[styles.input, styles.inputTime, inputStyle]}
+            placeholder="Time"
+            placeholderTextColor={palette.text.faint}
+            value={timeLabel}
+            onChangeText={setTimeLabel}
+            onSubmitEditing={() => onSaveSchedule(amount, timeLabel)}
+          />
+          <Pressable
+            onPress={() => onSaveSchedule(amount, timeLabel)}
+            style={[styles.saveBtn, { backgroundColor: glass.borderElevated }]}
+          >
+            <Text style={[styles.saveBtnText, { color: palette.text.primaryAlt }]}>Save</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </GlassCard>
   );
 }
@@ -244,6 +372,7 @@ function InventoryCard({ item, onRemove }: { item: PeptideInventoryRow; onRemove
 function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>) => void }) {
   const { palette, glass } = useTheme();
   const [name, setName] = useState('');
+  const [kind, setKind] = useState<PeptideKind>('peptide');
   const [vials, setVials] = useState('');
   const [recon, setRecon] = useState('');
   const [dosesLeft, setDosesLeft] = useState('');
@@ -261,8 +390,12 @@ function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>)
       recon: recon.trim(),
       doses_left: Number.isFinite(dosesLeftNum) ? dosesLeftNum : 0,
       doses_total: Number.isFinite(dosesTotalNum) && dosesTotalNum > 0 ? dosesTotalNum : 1,
+      kind,
+      schedule_amount: '',
+      schedule_time_label: '',
     });
     setName('');
+    setKind('peptide');
     setVials('');
     setRecon('');
     setDosesLeft('');
@@ -274,6 +407,31 @@ function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>)
   return (
     <View style={styles.addCompoundForm}>
       <Text style={[styles.addCompoundLabel, { color: palette.text.primary }]}>Add compound</Text>
+      <View style={styles.kindToggleRow}>
+        {KIND_ORDER.map((option) => {
+          const active = kind === option;
+          return (
+            <Pressable
+              key={option}
+              onPress={() => setKind(option)}
+              style={[
+                styles.kindToggleBtn,
+                { borderColor: glass.borderElevated },
+                active && { backgroundColor: withAlpha(palette.accentText, 0.22), borderColor: palette.accentText },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.kindToggleText,
+                  { color: active ? palette.accentText : palette.text.tertiary },
+                ]}
+              >
+                {KIND_LABEL[option]}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
       <View style={styles.addRow}>
         <TextInput
           style={[styles.input, styles.inputName, inputStyle]}
@@ -336,14 +494,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 4,
   },
-  title: {
-    fontSize: type.screenTitle.fontSize,
-    fontWeight: type.screenTitle.fontWeight,
-    letterSpacing: type.screenTitle.letterSpacing,
-  },
   subtitle: {
     fontSize: type.body.fontSize,
-    marginTop: 4,
   },
   sectionGap: {
     marginBottom: spacing.rowGapLg,
@@ -354,6 +506,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.rowGapSm,
   },
   doseList: {
+    gap: spacing.rowGapSm,
+  },
+  doseGroupList: {
     gap: spacing.rowGapSm,
   },
   emptyText: {
@@ -442,13 +597,46 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    marginBottom: spacing.rowGapSm,
+  },
   sectionLabel: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  addToggleBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addToggleGlyph: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  groupLabel: {
+    fontSize: type.caption.fontSize,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
     marginBottom: spacing.rowGapSm,
-    marginTop: 4,
+  },
+  groupDivider: {
+    height: 1,
+    marginBottom: spacing.rowGapMd,
   },
   inventoryList: {
+    gap: spacing.rowGapMd,
+  },
+  inventoryGroup: {
+    gap: spacing.rowGapSm,
+  },
+  inventoryGroupList: {
     gap: spacing.rowGapMd,
   },
   inventoryCardGap: {
@@ -474,6 +662,10 @@ const styles = StyleSheet.create({
     fontSize: type.meta.fontSize,
     marginTop: 6,
   },
+  scheduleSummary: {
+    fontSize: type.meta.fontSize,
+    marginTop: 4,
+  },
   progressTrack: {
     height: 8,
     borderRadius: 4,
@@ -494,11 +686,53 @@ const styles = StyleSheet.create({
     fontSize: type.caption.fontSize,
     fontWeight: type.caption.fontWeight,
   },
+  inventoryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.rowGapSm,
+  },
+  iconBtn: {
+    paddingHorizontal: 4,
+  },
+  scheduleForm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.rowGapSm,
+    marginTop: spacing.rowGapMd,
+  },
+  saveBtn: {
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: radius.input,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnText: {
+    fontSize: type.metaSemibold.fontSize,
+    fontWeight: '700',
+  },
   addCompoundForm: {
     marginTop: 0,
   },
   addCompoundLabel: {
     fontSize: type.cardTitle.fontSize,
     fontWeight: type.cardTitle.fontWeight,
+  },
+  kindToggleRow: {
+    flexDirection: 'row',
+    gap: spacing.rowGapSm,
+    marginTop: spacing.rowGapSm,
+  },
+  kindToggleBtn: {
+    paddingHorizontal: 12,
+    height: 32,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kindToggleText: {
+    fontSize: type.metaSemibold.fontSize,
+    fontWeight: type.metaSemibold.fontWeight,
   },
 });
