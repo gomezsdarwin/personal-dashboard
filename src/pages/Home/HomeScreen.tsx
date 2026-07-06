@@ -14,6 +14,7 @@ import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
 import { HeaderBar } from '../../components/HeaderBar';
 import { WeekStrip } from '../../components/WeekStrip';
+import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
 import { dueMeta } from '../../lib/dueDate';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
@@ -325,7 +326,7 @@ export default function HomeScreen() {
         )}
       </GlassCard>
 
-      {/* Phase 5 inserts a HabitTrackerCard here, as a sibling GlassCard below To-Do. */}
+      <HabitTrackerCard />
     </AppShell>
   );
 }

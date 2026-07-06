@@ -86,6 +86,23 @@ export type PeptideInventoryRow = {
   doses_total: number;
 };
 
+export type HabitRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  name: string;
+  favorite: boolean;
+  position: number;
+};
+
+export type HabitCompletionRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  habit_id: string;
+  completed_on: string; // date (YYYY-MM-DD)
+};
+
 /** Table name -> row type map, used by the generic Repo<T> factory in src/lib/db.ts. */
 export type TableRowMap = {
   tasks: TaskRow;
@@ -94,6 +111,8 @@ export type TableRowMap = {
   subscriptions: SubscriptionRow;
   peptide_doses: PeptideDoseRow;
   peptide_inventory: PeptideInventoryRow;
+  habits: HabitRow;
+  habit_completions: HabitCompletionRow;
 };
 
 export type TableName = keyof TableRowMap;
