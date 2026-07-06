@@ -1,8 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  Animated,
+  ImageBackground,
+  ScrollView,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { spacing, wallpaperMesh, type WallpaperName } from '../theme/tokens';
+import { spacing, type WallpaperName } from '../theme/tokens';
+import { defaultArtwork } from '../data/artworks';
 
 type Props = {
   children?: React.ReactNode;
@@ -27,29 +35,13 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
     ]).start();
   }, [opacity, translateY]);
 
-  const mesh = wallpaperMesh[wallpaper];
-
   return (
     <View style={styles.root}>
-      <LinearGradient
-        colors={mesh.linear}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Pastel mesh approximation: RN has no radial-gradient, so each mesh color
-          is layered as a soft corner wash (color -> transparent), matching the
-          top-left / top-right / bottom-left / bottom-right stops in HANDOFF. */}
-      {mesh.radial.map((c, i) => (
-        <LinearGradient
-          key={i}
-          colors={[c, 'transparent']}
-          start={{ x: 0.5, y: 0.5 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.blob, MESH_CORNERS[i]]}
-          pointerEvents="none"
-        />
-      ))}
+      <ImageBackground source={defaultArtwork.source} resizeMode="cover" style={StyleSheet.absoluteFill}>
+        {/* Hardcoded dark scrim for legibility of glass cards over the painting.
+            Will become theme-driven (per-artwork/dark-light aware) in a later phase. */}
+        <View style={[StyleSheet.absoluteFill, styles.scrim]} pointerEvents="none" />
+      </ImageBackground>
       <ScrollView
         style={styles.scroller}
         contentContainerStyle={[
@@ -68,24 +60,12 @@ export function AppShell({ children, wallpaper = 'Sunset', contentStyle }: Props
   );
 }
 
-// Corner anchors for the 4 mesh washes (top-left, top-right, bottom-left, bottom-right).
-const MESH_CORNERS: ViewStyle[] = [
-  { top: '-10%', left: '-15%' },
-  { top: '-5%', right: '-20%' },
-  { bottom: '-8%', left: '-10%' },
-  { bottom: '-10%', right: '-15%' },
-];
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  blob: {
-    position: 'absolute',
-    width: '75%',
-    height: '55%',
-    borderRadius: 500,
-    opacity: 0.85,
+  scrim: {
+    backgroundColor: 'rgba(5,10,20,0.35)',
   },
   scroller: {
     flex: 1,
