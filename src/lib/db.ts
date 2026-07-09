@@ -19,6 +19,33 @@ function storageKey(table: TableName): string {
   return `pd:${table}`;
 }
 
+// Bump this version string to force a one-time wipe of all local `pd:*`
+// AsyncStorage keys on next app load (used to clear previously-seeded demo
+// data from devices without affecting Supabase-backed accounts).
+const DATA_RESET_VERSION = '2026-07-09-fresh-slate';
+const DATA_RESET_KEY = 'pd:__reset_version';
+
+/**
+ * One-time, versioned local-storage wipe. Clears every `pd:`-prefixed
+ * AsyncStorage key (per-table data + `pd:seeded:<table>` flags) the first
+ * time it runs after DATA_RESET_VERSION changes, then records that it ran so
+ * it never wipes again until the version is bumped. Purely local: does not
+ * touch Supabase, so accounts using the Supabase backend are unaffected.
+ */
+export async function ensureFreshSlate(): Promise<void> {
+  const storedVersion = await AsyncStorage.getItem(DATA_RESET_KEY);
+  if (storedVersion === DATA_RESET_VERSION) return;
+
+  const allKeys = await AsyncStorage.getAllKeys();
+  const keysToDelete = allKeys.filter(
+    (key) => key.startsWith('pd:') && key !== DATA_RESET_KEY
+  );
+  if (keysToDelete.length > 0) {
+    await AsyncStorage.multiRemove(keysToDelete);
+  }
+  await AsyncStorage.setItem(DATA_RESET_KEY, DATA_RESET_VERSION);
+}
+
 async function readLocal<T>(table: TableName): Promise<T[]> {
   const raw = await AsyncStorage.getItem(storageKey(table));
   if (!raw) return [];

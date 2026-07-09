@@ -60,26 +60,28 @@ export function HeaderBar({ sectionTitle }: Props) {
         <BlurView intensity={glass.blurIntensityHeader} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fillHeader }]} />
 
-        <View style={styles.row}>
-          <View style={styles.identity}>
-            <LinearGradient
-              colors={diag.colors}
-              start={diag.start}
-              end={diag.end}
-              style={[styles.avatar, { borderColor: withAlpha(palette.accentText, 0.4) }]}
-            >
-              {initial ? (
-                <Text style={styles.avatarInitial}>{initial}</Text>
-              ) : (
-                <MaterialCommunityIcons name="account" size={20} color="#fff" />
-              )}
-            </LinearGradient>
-            {nameText ? (
-              <Text style={[styles.name, { color: palette.text.primary }]} numberOfLines={1}>
-                {nameText}
-              </Text>
-            ) : null}
-          </View>
+        <View style={[styles.row, sectionTitle ? styles.rowIconsOnly : null]}>
+          {sectionTitle ? null : (
+            <View style={styles.identity}>
+              <LinearGradient
+                colors={diag.colors}
+                start={diag.start}
+                end={diag.end}
+                style={[styles.avatar, { borderColor: withAlpha(palette.accentText, 0.4) }]}
+              >
+                {initial ? (
+                  <Text style={styles.avatarInitial}>{initial}</Text>
+                ) : (
+                  <MaterialCommunityIcons name="account" size={20} color="#fff" />
+                )}
+              </LinearGradient>
+              {nameText ? (
+                <Text style={[styles.name, { color: palette.text.primary }]} numberOfLines={1}>
+                  {nameText}
+                </Text>
+              ) : null}
+            </View>
+          )}
 
           <View style={styles.icons}>
             <Pressable
@@ -122,6 +124,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+  },
+  rowIconsOnly: {
+    justifyContent: 'flex-end',
   },
   identity: {
     flexDirection: 'row',

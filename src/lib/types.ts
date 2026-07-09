@@ -84,6 +84,8 @@ export type PeptideDoseRow = {
   kind: PeptideKind;
 };
 
+export type PeptideFrequency = 'daily' | 'everyN' | 'weekdays' | 'asNeeded';
+
 export type PeptideInventoryRow = {
   id: string;
   user_id: string;
@@ -96,6 +98,22 @@ export type PeptideInventoryRow = {
   kind: PeptideKind;
   schedule_amount: string;
   schedule_time_label: string;
+  /** Structured recon math (peptide kind only) — vial size in mg, bacteriostatic
+   * water volume in mL, and a single dose amount in mcg. The UI derives
+   * concentration/volume-per-dose/doses-per-vial from these at render time
+   * rather than persisting them. Legacy `recon` free text is kept for
+   * backward-compat and for 'supplement' rows, which aren't vial-based. */
+  vial_mg: number;
+  bac_ml: number;
+  dose_mcg: number;
+  /** Dosing cadence. `frequency_n` is used when frequency === 'everyN' (e.g. 3
+   * for "every 3 days"). `frequency_days` is a comma-separated list of day
+   * abbreviations (e.g. "Mon,Thu") used when frequency === 'weekdays'. */
+  frequency: PeptideFrequency;
+  frequency_n: number;
+  frequency_days: string;
+  /** Free-form per-compound note, e.g. a reminder to bump dosage on a future date. */
+  note: string;
 };
 
 export type HabitRow = {

@@ -13,8 +13,6 @@ type Props = {
   onClose: () => void;
   habits: HabitRow[];
   completions: HabitCompletionRow[];
-  selectedHabitId: string | null;
-  onSelectHabit: (id: string) => void;
 };
 
 // 28 weeks x 7 days ~= 6 months, matching the reference mockup's grid dimensions.
@@ -37,16 +35,9 @@ function habitColorFor(habitId: string): string {
 
 /**
  * HabitStatsModal — near-full-screen bottom sheet showing a GitHub-contribution-style
- * grid (28 weeks x 7 days) of one habit's completion history at a time.
+ * grid (28 weeks x 7 days) of every habit's completion history at once.
  */
-export function HabitStatsModal({
-  visible,
-  onClose,
-  habits,
-  completions,
-  selectedHabitId,
-  onSelectHabit,
-}: Props) {
+export function HabitStatsModal({ visible, onClose, habits, completions }: Props) {
   const insets = useSafeAreaInsets();
   const { palette, glass } = useTheme();
 
@@ -56,8 +47,6 @@ export function HabitStatsModal({
   );
 
   const todayIso = useMemo(() => toIsoDate(new Date()), []);
-
-  const activeHabitName = habits.find((h) => h.id === selectedHabitId)?.name ?? '';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -84,65 +73,21 @@ export function HabitStatsModal({
                 No habits yet — add one to see its history here.
               </Text>
             ) : (
-              <>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.chipScroll}
-                  contentContainerStyle={styles.chipRow}
-                >
-                  {habits.map((h) => (
-                    <Chip
-                      key={h.id}
-                      label={h.name}
-                      active={selectedHabitId === h.id}
-                      onPress={() => onSelectHabit(h.id)}
-                    />
-                  ))}
-                </ScrollView>
-
-                <ScrollView showsVerticalScrollIndicator={false}>
-                  <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]} numberOfLines={1}>
-                    {activeHabitName}
-                  </Text>
-
-                  {selectedHabitId ? (
-                    <ContributionGrid
-                      habitId={selectedHabitId}
-                      completionSet={completionSet}
-                      todayIso={todayIso}
-                    />
-                  ) : null}
-                </ScrollView>
-              </>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {habits.map((h) => (
+                  <View key={h.id} style={styles.habitBlock}>
+                    <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]} numberOfLines={1}>
+                      {h.name}
+                    </Text>
+                    <ContributionGrid habitId={h.id} completionSet={completionSet} todayIso={todayIso} />
+                  </View>
+                ))}
+              </ScrollView>
             )}
           </View>
         </View>
       </View>
     </Modal>
-  );
-}
-
-function Chip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
-  const { palette, glass } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[
-        styles.chip,
-        {
-          backgroundColor: active ? palette.accentText : glass.fill,
-          borderColor: active ? palette.accentText : glass.borderBase,
-        },
-      ]}
-    >
-      <Text
-        style={[styles.chipText, { color: active ? '#ffffff' : palette.text.primary }]}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -249,24 +194,8 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     textAlign: 'center',
   },
-  chipScroll: {
-    flexGrow: 0,
-    marginBottom: 16,
-  },
-  chipRow: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  chip: {
-    borderWidth: 1,
-    borderRadius: radius.chip,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    maxWidth: 160,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '600',
+  habitBlock: {
+    marginBottom: 28,
   },
   chartTitle: {
     fontSize: 17,

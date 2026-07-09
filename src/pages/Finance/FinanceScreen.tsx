@@ -9,7 +9,7 @@ import { UrgencyPill } from '../../components/UrgencyPill';
 import { useRepo } from '../../hooks/useRepo';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
-import type { NewRow, SubscriptionCategory, SubscriptionRow } from '../../lib/types';
+import type { SubscriptionCategory } from '../../lib/types';
 
 type MCIName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -34,25 +34,6 @@ function normalizeCategory(value: string): SubscriptionCategory {
   return (CATEGORY_KEYS.has(value) ? value : 'Others') as SubscriptionCategory;
 }
 
-/** Same-day-offset ISO helper as Phone.dc.html's `iso(n)` — relative to "today". */
-function isoInDays(n: number): string {
-  const x = new Date();
-  x.setHours(0, 0, 0, 0);
-  x.setDate(x.getDate() + n);
-  return x.toISOString().slice(0, 10);
-}
-
-/** rawSubs from Phone.dc.html, remapped onto the fixed category set ("News" has no clean fit -> Others). */
-const SEED_SUBSCRIPTIONS: NewRow<SubscriptionRow>[] = [
-  { name: 'Netflix', category: 'Streaming', amount: 15.49, renews_on: isoInDays(9) },
-  { name: 'Spotify', category: 'Music', amount: 10.99, renews_on: isoInDays(1) },
-  { name: 'iCloud+', category: 'Software', amount: 2.99, renews_on: isoInDays(17) },
-  { name: 'ChatGPT Plus', category: 'Software', amount: 20.0, renews_on: isoInDays(4) },
-  { name: 'Equinox', category: 'Fitness', amount: 45.0, renews_on: isoInDays(0) },
-  { name: 'YouTube Premium', category: 'Streaming', amount: 13.99, renews_on: isoInDays(22) },
-  { name: 'NYT', category: 'Others', amount: 4.25, renews_on: isoInDays(14) },
-];
-
 /** Mirrors Phone.dc.html's `usd`/`usd0` helpers. */
 const usd = (n: number): string => `$${n.toFixed(2)}`;
 const usd0 = (n: number): string => `$${n.toFixed(0)}`;
@@ -61,7 +42,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function FinanceScreen() {
   const { palette, glass } = useTheme();
-  const { rows: rawRows, insert, remove } = useRepo('subscriptions', SEED_SUBSCRIPTIONS);
+  const { rows: rawRows, insert, remove } = useRepo('subscriptions');
   const rows = useMemo(() => rawRows.map((r) => ({ ...r, category: normalizeCategory(r.category) })), [rawRows]);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createRepo } from '../lib/db';
+import { createRepo, ensureFreshSlate } from '../lib/db';
 import type { NewRow, TableName, TableRowMap } from '../lib/types';
 
 export type UseRepoResult<T extends { id: string; user_id: string; created_at: string }> = {
@@ -31,6 +31,7 @@ export function useRepo<K extends TableName>(
 
     (async () => {
       setLoading(true);
+      await ensureFreshSlate();
       const repo = repoRef.current;
       let list = await repo.list();
 

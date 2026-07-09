@@ -3,7 +3,7 @@ import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'r
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GlassCard } from '../../components/GlassCard';
 import { useRepo } from '../../hooks/useRepo';
-import type { HabitRow, NewRow } from '../../lib/types';
+import type { HabitRow } from '../../lib/types';
 import { toIsoDate, weekDayIsos, weekStartIso } from '../../lib/week';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
@@ -11,17 +11,10 @@ import { HabitStatsModal } from './HabitStatsModal';
 
 const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
-// 16x16, matching sampleindex.html's `.habit-square` exactly (much smaller than the
-// previous 28x28 — the reference's cells read as compact indicator dots, not buttons).
-const CELL = 16;
-const CELL_GAP = 8;
-
-/** First-run sample habits, one marked favorite so the "favorites sort to top" rule is visible. */
-const seedHabits: NewRow<HabitRow>[] = [
-  { name: 'Drink water', favorite: true, position: 0 },
-  { name: 'Read 20 pages', favorite: false, position: 1 },
-  { name: 'Stretch', favorite: false, position: 2 },
-];
+// Enlarged from the original 16x16 for reliable mobile tap targets (plus hitSlop
+// below extends the actual touchable area further without changing visual size).
+const CELL = 26;
+const CELL_GAP = 10;
 
 /** Sort order: favorites first, then insertion position. */
 function habitOrder(h: HabitRow): number {
@@ -34,10 +27,7 @@ function completionKeyOf(habitId: string, iso: string): string {
 
 export function HabitTrackerCard() {
   const { palette, glass, mode } = useTheme();
-  const { rows: habits, insert: insertHabit, update: updateHabit, remove: removeHabit } = useRepo(
-    'habits',
-    seedHabits
-  );
+  const { rows: habits, insert: insertHabit, update: updateHabit, remove: removeHabit } = useRepo('habits');
   const {
     rows: completions,
     insert: insertCompletion,
@@ -47,7 +37,6 @@ export function HabitTrackerCard() {
   const [newHabitName, setNewHabitName] = useState('');
   const [addHabitOpen, setAddHabitOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [statsHabitId, setStatsHabitId] = useState<string | null>(null);
 
   const todayIso = useMemo(() => toIsoDate(new Date()), []);
   const currentWeekStart = useMemo(() => weekStartIso(new Date()), []);
@@ -120,24 +109,29 @@ export function HabitTrackerCard() {
     ]);
   };
 
-  const openStats = () => {
-    setStatsHabitId((prev) => (prev && sortedHabits.some((h) => h.id === prev) ? prev : sortedHabits[0]?.id ?? null));
-    setStatsOpen(true);
-  };
-
   return (
     <>
       <GlassCard style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <Text style={[styles.cardTitle, { color: palette.accentText }]}>HABIT TRACKER</Text>
-          <Pressable
-            onPress={openStats}
-            style={styles.statsButton}
-            accessibilityRole="button"
-            accessibilityLabel="View habit history chart"
-          >
-            <MaterialCommunityIcons name="chart-line" size={20} color={palette.accentText} />
-          </Pressable>
+          <View style={styles.cardHeaderRight}>
+            <Pressable
+              onPress={() => setAddHabitOpen(true)}
+              style={styles.statsButton}
+              accessibilityRole="button"
+              accessibilityLabel="Add habit"
+            >
+              <MaterialCommunityIcons name="plus" size={20} color={palette.accentText} />
+            </Pressable>
+            <Pressable
+              onPress={() => setStatsOpen(true)}
+              style={styles.statsButton}
+              accessibilityRole="button"
+              accessibilityLabel="View habit history chart"
+            >
+              <MaterialCommunityIcons name="chart-line" size={20} color={palette.accentText} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.columnHeaderRow}>
@@ -207,6 +201,7 @@ export function HabitTrackerCard() {
                       disabled={isFuture}
                       onPress={() => toggleCell(habit.id, iso)}
                       style={[styles.cellBase, isFuture && styles.cellFuture]}
+                      hitSlop={4}
                       accessibilityRole="button"
                       accessibilityState={{ disabled: isFuture, selected: completed }}
                       accessibilityLabel={`${habit.name} on ${iso}${isFuture ? ' (future, disabled)' : completed ? ', completed' : ', not completed'}`}
@@ -267,17 +262,7 @@ export function HabitTrackerCard() {
               <MaterialCommunityIcons name="close" size={18} color={palette.text.faint} />
             </Pressable>
           </View>
-        ) : (
-          <Pressable
-            onPress={() => setAddHabitOpen(true)}
-            style={styles.addTrigger}
-            accessibilityRole="button"
-            accessibilityLabel="Add habit"
-          >
-            <MaterialCommunityIcons name="plus-circle" size={22} color={palette.accentText} />
-            <Text style={[styles.addTriggerLabel, { color: palette.text.secondary }]}>New habit…</Text>
-          </Pressable>
-        )}
+        ) : null}
       </GlassCard>
 
       <HabitStatsModal
@@ -285,8 +270,6 @@ export function HabitTrackerCard() {
         onClose={() => setStatsOpen(false)}
         habits={sortedHabits}
         completions={completions}
-        selectedHabitId={statsHabitId}
-        onSelectHabit={setStatsHabitId}
       />
     </>
   );
@@ -310,6 +293,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 1.8,
     textTransform: 'uppercase',
+  },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   statsButton: {
     width: 24,
@@ -403,17 +391,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 2,
     paddingTop: 12,
-  },
-  addTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 2,
-    paddingTop: 12,
-  },
-  addTriggerLabel: {
-    fontSize: typeScale.body.fontSize,
-    fontWeight: typeScale.bodyMedium.fontWeight,
   },
   closeAddButton: {
     width: 32,

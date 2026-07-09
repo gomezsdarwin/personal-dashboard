@@ -15,6 +15,11 @@ type Props = {
 /** Renders a neutral due-date/renewal-date pill (label only, no urgency color-coding). */
 export function UrgencyPill({ dueDate, done, style }: Props) {
   const { palette, glass } = useTheme();
+
+  if (!done && !dueDate) {
+    return null;
+  }
+
   const label = done ? 'Done' : dueMeta(dueDate).label;
 
   return (

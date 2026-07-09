@@ -9,7 +9,6 @@ import { useRepo } from '../../hooks/useRepo';
 import { SplitEditor } from './SplitEditor';
 import { HistoryModal } from './HistoryModal';
 import {
-  DEMO_SESSIONS,
   SPLITS,
   getDefaultSlots,
   getMuscle,
@@ -179,7 +178,7 @@ function rehydrateFromSession(
 // ---------------------------------------------------------------------------
 
 export function LogTab() {
-  const sessionsRepo = useRepo('gym_sessions', DEMO_SESSIONS);
+  const sessionsRepo = useRepo('gym_sessions');
   const configRepo = useRepo('gym_split_config');
 
   const today = useMemo(() => todayIso(), []);

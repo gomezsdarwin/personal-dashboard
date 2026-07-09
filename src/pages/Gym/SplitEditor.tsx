@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassCard } from '../../components/GlassCard';
 import { radius, spacing, type } from '../../theme/tokens';
@@ -129,6 +129,29 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
   const [newMuscle, setNewMuscle] = useState<string>(Object.keys(MUSCLES)[0] ?? '');
   const { palette, glass } = useTheme();
 
+  /** Suggestion pool for the "add alternative" autocomplete: every library
+   * exercise name (primary + built-in alts, since library rows' `options`
+   * already include both) plus every custom/alt name already added anywhere
+   * in the current `rows` state, deduped by name. */
+  const namePool = useMemo(() => {
+    const seen = new Set<string>();
+    const pool: { name: string; defaultWeight: number }[] = [];
+    const add = (name: string, defaultWeight: number) => {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      pool.push({ name, defaultWeight });
+    };
+    for (const exercises of Object.values(MUSCLES)) {
+      for (const ex of exercises) add(ex.name, ex.defaultWeight);
+    }
+    for (const r of rows) {
+      if (r.custom) add(r.name, r.defaultWeight);
+      else for (const opt of r.options) add(opt.name, opt.defaultWeight);
+    }
+    return pool;
+  }, [rows]);
+
   function toggle(slot: string) {
     setRows((prev) => sortEnabledFirst(prev.map((r) => (r.slot === slot ? { ...r, enabled: !r.enabled } : r))));
   }
@@ -180,6 +203,28 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
 
   function removeCustom(slot: string) {
     setRows((prev) => prev.filter((r) => r.slot !== slot));
+  }
+
+  /** Removes a user-added alternative (`id`) from a library row's `options`.
+   * If the removed alt was the active selection, falls back to the row's
+   * first remaining option, or the base library's primary option if no alts
+   * remain (mirrors `pickAlt`/`addAlternative`'s state-update pattern). */
+  function removeAlternative(slot: string, id: string) {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.slot !== slot || r.custom) return r;
+        const options = r.options.filter((o) => o.id !== id);
+        if (id !== r.selectedId) return { ...r, options };
+        const fallback = options[0] ?? getSlotOptions(r.slot)[0];
+        return {
+          ...r,
+          options,
+          selectedId: fallback?.id ?? r.slot,
+          name: fallback?.name ?? r.name,
+          defaultWeight: fallback?.defaultWeight ?? r.defaultWeight,
+        };
+      })
+    );
   }
 
   function addCustom() {
@@ -263,6 +308,8 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
             onToggle={() => toggle(row.slot)}
             onPickAlt={(id) => pickAlt(row.slot, id)}
             onAddAlt={(name, weight) => addAlternative(row.slot, name, weight)}
+            onRemoveAlt={(id) => removeAlternative(row.slot, id)}
+            namePool={namePool}
             onMoveUp={() => moveUp(idx)}
             onMoveDown={() => moveDown(idx)}
             onRemove={() => removeCustom(row.slot)}
@@ -328,6 +375,8 @@ function EditorRowView({
   onToggle,
   onPickAlt,
   onAddAlt,
+  onRemoveAlt,
+  namePool,
   onMoveUp,
   onMoveDown,
   onRemove,
@@ -338,6 +387,8 @@ function EditorRowView({
   onToggle: () => void;
   onPickAlt: (id: string) => void;
   onAddAlt: (name: string, weight: number) => void;
+  onRemoveAlt: (id: string) => void;
+  namePool: { name: string; defaultWeight: number }[];
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
@@ -346,6 +397,22 @@ function EditorRowView({
   const [addingAlt, setAddingAlt] = useState(false);
   const [altName, setAltName] = useState('');
   const [altWeight, setAltWeight] = useState('');
+
+  // Names of this slot's base library options (primary + built-in alts) —
+  // anything in `row.options` beyond this set is user-added and removable.
+  const baseOptionIds = new Set(getSlotOptions(row.slot).map((o) => o.id));
+
+  const suggestions =
+    altName.trim().length > 0
+      ? namePool
+          .filter((n) => n.name.toLowerCase().includes(altName.trim().toLowerCase()))
+          .slice(0, 5)
+      : [];
+
+  function pickSuggestion(s: { name: string; defaultWeight: number }) {
+    setAltName(s.name);
+    if (s.defaultWeight) setAltWeight(String(s.defaultWeight));
+  }
 
   function commitAlt() {
     if (!altName.trim()) return;
@@ -381,18 +448,26 @@ function EditorRowView({
             {row.options.length > 1 &&
               row.options.map((opt) => {
                 const active = opt.id === row.selectedId;
+                const removable = !baseOptionIds.has(opt.id);
                 return (
-                  <Pressable
+                  <View
                     key={opt.id}
                     style={[
                       styles.altPill,
+                      styles.altPillWrap,
                       { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.4)' },
                       active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
                     ]}
-                    onPress={() => onPickAlt(opt.id)}
                   >
-                    <Text style={[styles.altPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{opt.name}</Text>
-                  </Pressable>
+                    <Pressable onPress={() => onPickAlt(opt.id)} hitSlop={4}>
+                      <Text style={[styles.altPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{opt.name}</Text>
+                    </Pressable>
+                    {removable && (
+                      <Pressable onPress={() => onRemoveAlt(opt.id)} hitSlop={8} style={styles.altPillRemove}>
+                        <Text style={[styles.altPillRemoveText, { color: active ? '#ffffff' : palette.text.tertiary }]}>×</Text>
+                      </Pressable>
+                    )}
+                  </View>
                 );
               })}
             {!addingAlt && (
@@ -406,31 +481,48 @@ function EditorRowView({
           </View>
         )}
         {!row.custom && row.enabled && addingAlt && (
-          <View style={styles.addAltForm}>
-            <TextInput
-              style={[styles.addAltInput, styles.addAltInputName, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
-              placeholder="Alternative name"
-              placeholderTextColor={palette.text.faint}
-              value={altName}
-              onChangeText={setAltName}
-              onSubmitEditing={commitAlt}
-              autoFocus
-            />
-            <TextInput
-              style={[styles.addAltInput, styles.addAltInputWeight, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
-              placeholder="lbs"
-              placeholderTextColor={palette.text.faint}
-              keyboardType="numeric"
-              value={altWeight}
-              onChangeText={setAltWeight}
-              onSubmitEditing={commitAlt}
-            />
-            <Pressable style={[styles.addAltBtn, { backgroundColor: palette.accentText }]} onPress={commitAlt}>
-              <Text style={styles.addAltBtnText}>Add</Text>
-            </Pressable>
-            <Pressable hitSlop={6} onPress={() => setAddingAlt(false)}>
-              <Text style={[styles.addAltCancel, { color: palette.text.tertiary }]}>Cancel</Text>
-            </Pressable>
+          <View>
+            <View style={styles.addAltForm}>
+              <TextInput
+                style={[styles.addAltInput, styles.addAltInputName, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
+                placeholder="Alternative name"
+                placeholderTextColor={palette.text.faint}
+                value={altName}
+                onChangeText={setAltName}
+                onSubmitEditing={commitAlt}
+                autoFocus
+              />
+              <TextInput
+                style={[styles.addAltInput, styles.addAltInputWeight, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
+                placeholder="lbs"
+                placeholderTextColor={palette.text.faint}
+                keyboardType="numeric"
+                value={altWeight}
+                onChangeText={setAltWeight}
+                onSubmitEditing={commitAlt}
+              />
+              <Pressable style={[styles.addAltBtn, { backgroundColor: palette.accentText }]} onPress={commitAlt}>
+                <Text style={styles.addAltBtnText}>Add</Text>
+              </Pressable>
+              <Pressable hitSlop={6} onPress={() => setAddingAlt(false)}>
+                <Text style={[styles.addAltCancel, { color: palette.text.tertiary }]}>Cancel</Text>
+              </Pressable>
+            </View>
+            {suggestions.length > 0 && (
+              <View style={styles.suggestionRow}>
+                {suggestions.map((s) => (
+                  <Pressable
+                    key={s.name}
+                    style={[styles.suggestionChip, { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.35)' }]}
+                    onPress={() => pickSuggestion(s)}
+                  >
+                    <Text style={[styles.suggestionChipText, { color: palette.text.secondary }]} numberOfLines={1}>
+                      {s.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -565,6 +657,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  altPillWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  altPillRemove: {
+    marginLeft: 6,
+  },
+  altPillRemoveText: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 14,
+  },
   addAltPill: {
     backgroundColor: 'transparent',
     borderStyle: 'dashed',
@@ -602,6 +706,23 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   addAltCancel: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  suggestionChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    maxWidth: 150,
+  },
+  suggestionChipText: {
     fontSize: 11,
     fontWeight: '600',
   },

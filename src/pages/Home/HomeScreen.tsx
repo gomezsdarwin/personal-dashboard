@@ -13,18 +13,10 @@ import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
 import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
-import { dueMeta } from '../../lib/dueDate';
-import type { NewRow, TaskRow } from '../../lib/types';
+import { dueMeta, fmt } from '../../lib/dueDate';
+import type { TaskRow } from '../../lib/types';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme, withAlpha } from '../../theme/ThemeContext';
-
-/** Same relative-day helper as Phone.dc.html's `d(n)` — local "today" offset by n days, ISO date. */
-function relativeIso(n: number): string {
-  const x = new Date();
-  x.setHours(0, 0, 0, 0);
-  x.setDate(x.getDate() + n);
-  return toIsoDate(x);
-}
 
 /** Local-calendar ISO date (YYYY-MM-DD) — avoids UTC-shift bugs from toISOString(). */
 function toIsoDate(d: Date): string {
@@ -34,23 +26,13 @@ function toIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** First-run sample tasks mirroring Phone.dc.html's fixture set. */
-const seedTasks: NewRow<TaskRow>[] = [
-  { title: 'Submit quarterly report', due_date: relativeIso(0), done: false },
-  { title: 'Renew car insurance', due_date: relativeIso(1), done: false },
-  { title: 'Call dentist to reschedule', due_date: relativeIso(-1), done: false },
-  { title: 'Meal prep for the week', due_date: relativeIso(3), done: false },
-  { title: 'Book flights for October', due_date: relativeIso(12), done: false },
-  { title: 'Read 20 pages', due_date: null, done: true },
-];
-
 /** Sort order: soonest-due first, completed tasks sink to bottom. Mirrors Phone.dc.html's `order`. */
 function taskOrder(t: TaskRow): number {
   return t.done ? 1e12 : dueMeta(t.due_date).days * 1e6;
 }
 
 export default function HomeScreen() {
-  const { rows: tasks, insert, update, remove } = useRepo('tasks', seedTasks);
+  const { rows: tasks, insert, update, remove } = useRepo('tasks');
   const { palette, glass, mode, todoCollapsed, setTodoCollapsed } = useTheme();
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
@@ -175,6 +157,14 @@ export default function HomeScreen() {
           <View style={styles.cardHeaderRight}>
             <Text style={[styles.openCount, { color: palette.text.quaternary }]}>{openCount} open</Text>
             <Pressable
+              onPress={() => setAddTaskOpen(true)}
+              style={styles.collapseToggle}
+              accessibilityRole="button"
+              accessibilityLabel="Add task"
+            >
+              <MaterialCommunityIcons name="plus" size={20} color={palette.accentText} />
+            </Pressable>
+            <Pressable
               onPress={() => setTodoCollapsed(!todoCollapsed)}
               style={styles.collapseToggle}
               accessibilityRole="button"
@@ -242,17 +232,7 @@ export default function HomeScreen() {
                   <MaterialCommunityIcons name="close" size={18} color={palette.text.faint} />
                 </Pressable>
               </View>
-            ) : (
-              <Pressable
-                onPress={() => setAddTaskOpen(true)}
-                style={styles.addTrigger}
-                accessibilityRole="button"
-                accessibilityLabel="Add task"
-              >
-                <MaterialCommunityIcons name="plus-circle" size={22} color={palette.accentText} />
-                <Text style={[styles.addTriggerLabel, { color: palette.text.secondary }]}>Add a task…</Text>
-              </Pressable>
-            )}
+            ) : null}
 
             {showPicker && Platform.OS !== 'web' ? (
               <DateTimePicker
@@ -312,11 +292,11 @@ export default function HomeScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={t.due_date ? `Due date ${t.due_date}` : 'Set due date'}
                   >
-                    <MaterialCommunityIcons
-                      name="calendar"
-                      size={16}
-                      color={t.due_date ? palette.accentText : palette.text.faint}
-                    />
+                    {t.due_date ? (
+                      <Text style={[styles.rowDueDate, { color: palette.accentText }]} numberOfLines={1}>
+                        {fmt(t.due_date)}
+                      </Text>
+                    ) : null}
                   </Pressable>
                 )}
 
@@ -385,17 +365,6 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 2,
     paddingBottom: 12,
-  },
-  addTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 2,
-    paddingBottom: 12,
-  },
-  addTriggerLabel: {
-    fontSize: typeScale.body.fontSize,
-    fontWeight: typeScale.bodyMedium.fontWeight,
   },
   closeAddButton: {
     width: 32,
@@ -472,13 +441,17 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   rowCalendarWrap: {
-    flexBasis: 22,
+    flexBasis: 46,
     flexGrow: 0,
     flexShrink: 0,
-    width: 22,
+    minWidth: 46,
     height: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  rowDueDate: {
+    fontSize: typeScale.meta.fontSize,
+    fontWeight: typeScale.metaMedium.fontWeight,
   },
   rowDueInput: {
     flexBasis: 110,

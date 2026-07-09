@@ -8,73 +8,21 @@ import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme, withAlpha } from '../../theme/ThemeContext';
 import { accent } from '../../theme/accent';
 import { useRepo } from '../../hooks/useRepo';
-import type { NewRow, PeptideDoseRow, PeptideInventoryRow, PeptideKind } from '../../lib/types';
+import type { NewRow, PeptideDoseRow, PeptideFrequency, PeptideInventoryRow, PeptideKind } from '../../lib/types';
 
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
-const seedDoses: NewRow<PeptideDoseRow>[] = [
-  { name: 'BPC-157', amount: '250 mcg · SubQ', time_label: '8:00 AM', taken: true, scheduled_for: todayIso(), kind: 'peptide' },
-  { name: 'Ipamorelin', amount: '200 mcg · SubQ', time_label: '10:00 PM', taken: false, scheduled_for: todayIso(), kind: 'peptide' },
-  { name: 'TB-500', amount: '2 mg · weekly', time_label: 'Sun', taken: false, scheduled_for: todayIso(), kind: 'peptide' },
-  { name: 'Creatine', amount: '5 g · with breakfast', time_label: '8:00 AM', taken: false, scheduled_for: todayIso(), kind: 'supplement' },
-  { name: 'Ashwagandha', amount: '600 mg', time_label: '9:00 PM', taken: false, scheduled_for: todayIso(), kind: 'supplement' },
-];
-
-const seedInventory: NewRow<PeptideInventoryRow>[] = [
-  {
-    name: 'BPC-157',
-    vials: 2,
-    recon: '5 mg vial · 2 mL BAC → 250 mcg = 0.10 mL',
-    doses_left: 38,
-    doses_total: 50,
-    kind: 'peptide',
-    schedule_amount: '250 mcg · SubQ',
-    schedule_time_label: '8:00 AM',
-  },
-  {
-    name: 'Ipamorelin',
-    vials: 1,
-    recon: '5 mg vial · 2.5 mL BAC → 200 mcg = 0.10 mL',
-    doses_left: 14,
-    doses_total: 50,
-    kind: 'peptide',
-    schedule_amount: '200 mcg · SubQ',
-    schedule_time_label: '10:00 PM',
-  },
-  {
-    name: 'TB-500',
-    vials: 3,
-    recon: '5 mg vial · 2 mL BAC → 2 mg = 0.80 mL',
-    doses_left: 7,
-    doses_total: 8,
-    kind: 'peptide',
-    schedule_amount: '2 mg · weekly',
-    schedule_time_label: 'Sun',
-  },
-  {
-    name: 'Creatine',
-    vials: 1,
-    recon: '5 g scoop · 1 tub = 60 servings',
-    doses_left: 45,
-    doses_total: 60,
-    kind: 'supplement',
-    schedule_amount: '5 g · with breakfast',
-    schedule_time_label: '8:00 AM',
-  },
-  {
-    name: 'Ashwagandha',
-    vials: 1,
-    recon: '600 mg capsule · 1 bottle = 60 caps',
-    doses_left: 22,
-    doses_total: 60,
-    kind: 'supplement',
-    schedule_amount: '600 mg',
-    schedule_time_label: '9:00 PM',
-  },
-];
-
 const KIND_LABEL: Record<PeptideKind, string> = { peptide: 'Peptides', supplement: 'Supplements' };
 const KIND_ORDER: PeptideKind[] = ['peptide', 'supplement'];
+
+const DAY_ABBRS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const FREQUENCY_OPTIONS: { key: PeptideFrequency; label: string }[] = [
+  { key: 'daily', label: 'Daily' },
+  { key: 'everyN', label: 'Every N days' },
+  { key: 'weekdays', label: 'Specific days' },
+  { key: 'asNeeded', label: 'As needed' },
+];
 
 type KindGroup<T> = { kind: PeptideKind; items: T[] };
 
@@ -94,6 +42,53 @@ function normalizeKind<T extends { kind: PeptideKind }>(rows: T[]): T[] {
   return rows.map((row) => (row.kind ? row : { ...row, kind: 'peptide' }));
 }
 
+/** doses per vial = (vial size in mg * 1000) / dose in mcg; doses_total is the
+ * whole-dose count across all vials on hand (rounded down — partial doses
+ * don't count). */
+function computeDosesTotal(vialMg: number, doseMcg: number, vials: number): number {
+  if (vialMg <= 0 || doseMcg <= 0 || vials <= 0) return 0;
+  const dosesPerVial = (vialMg * 1000) / doseMcg;
+  return Math.floor(dosesPerVial) * vials;
+}
+
+/** Computed recon summary string for a peptide row with valid structured
+ * fields, e.g. "5 mg vial · 2 mL BAC → 250 mcg = 0.10 mL" — mirrors the format
+ * of the old hand-typed `recon` text. Returns null when the row isn't a
+ * peptide, or is missing/zeroed structured fields, so callers can fall back
+ * to the legacy `recon` string. */
+function reconSummary(item: PeptideInventoryRow): string | null {
+  if (item.kind !== 'peptide') return null;
+  if (!(item.vial_mg > 0) || !(item.bac_ml > 0) || !(item.dose_mcg > 0)) return null;
+  const concentration = item.vial_mg / item.bac_ml; // mg/mL
+  const volumePerDose = item.dose_mcg / 1000 / concentration; // mL
+  return `${item.vial_mg} mg vial · ${item.bac_ml} mL BAC → ${item.dose_mcg} mcg = ${volumePerDose.toFixed(2)} mL`;
+}
+
+/** Short display label for an inventory item's dosing cadence. Defaults to
+ * "Daily" when `frequency` is missing (rows persisted before this field
+ * existed). */
+function frequencyLabel(item: PeptideInventoryRow): string {
+  const freq = item.frequency || 'daily';
+  switch (freq) {
+    case 'everyN': {
+      const n = item.frequency_n || 1;
+      return `Every ${n} day${n === 1 ? '' : 's'}`;
+    }
+    case 'weekdays':
+      return item.frequency_days
+        ? item.frequency_days
+            .split(',')
+            .filter(Boolean)
+            .join(', ')
+        : 'Specific days';
+    case 'asNeeded':
+      return 'As needed';
+    case 'daily':
+    default:
+      return 'Daily';
+  }
+}
+
 /**
  * Peptides — dose schedule + inventory. Ports Phone.dc.html's PEPTIDES screen:
  * a "Today's schedule" glass card of toggleable doses, and one glass inventory
@@ -105,18 +100,34 @@ function normalizeKind<T extends { kind: PeptideKind }>(rows: T[]): T[] {
  */
 export default function PeptidesScreen() {
   const { palette, glass } = useTheme();
-  const doses = useRepo('peptide_doses', seedDoses);
-  const inventory = useRepo('peptide_inventory', seedInventory);
+  const doses = useRepo('peptide_doses');
+  const inventory = useRepo('peptide_inventory');
   const [showAddInventory, setShowAddInventory] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const doseGroups = useMemo(() => groupByKind(normalizeKind(doses.rows)), [doses.rows]);
   const inventoryGroups = useMemo(() => groupByKind(normalizeKind(inventory.rows)), [inventory.rows]);
 
-  const handleScheduleSave = async (item: PeptideInventoryRow, amount: string, timeLabel: string) => {
+  const handleDoseToggle = async (dose: PeptideDoseRow) => {
+    const nextTaken = !dose.taken;
+    await doses.update(dose.id, { taken: nextTaken });
+
+    const invItem = inventory.rows.find((item) => item.name === dose.name);
+    if (invItem) {
+      const delta = nextTaken ? -1 : 1;
+      const nextLeft = Math.max(0, Math.min(invItem.doses_total, invItem.doses_left + delta));
+      await inventory.update(invItem.id, { doses_left: nextLeft });
+    }
+  };
+
+  const handleScheduleSave = async (item: PeptideInventoryRow, amount: string, timeLabel: string, note: string) => {
     const trimmedAmount = amount.trim();
     const trimmedTime = timeLabel.trim();
-    await inventory.update(item.id, { schedule_amount: trimmedAmount, schedule_time_label: trimmedTime });
+    await inventory.update(item.id, {
+      schedule_amount: trimmedAmount,
+      schedule_time_label: trimmedTime,
+      note: note.trim(),
+    });
 
     const today = todayIso();
     const existing = doses.rows.find((dose) => dose.name === item.name && dose.scheduled_for === today);
@@ -144,10 +155,6 @@ export default function PeptidesScreen() {
 
   return (
     <AppShell>
-      <View style={styles.header}>
-        <Text style={[styles.subtitle, { color: palette.text.secondaryAlt }]}>Schedule & inventory</Text>
-      </View>
-
       <GlassCard style={styles.sectionGap}>
         <Text style={[styles.cardTitle, { color: palette.text.primary }]}>Today&apos;s schedule</Text>
         <View style={styles.doseList}>
@@ -157,7 +164,7 @@ export default function PeptidesScreen() {
               <Text style={[styles.groupLabel, { color: palette.text.tertiary }]}>{KIND_LABEL[group.kind]}</Text>
               <View style={styles.doseGroupList}>
                 {group.items.map((dose) => (
-                  <DoseRow key={dose.id} dose={dose} onToggle={() => doses.update(dose.id, { taken: !dose.taken })} />
+                  <DoseRow key={dose.id} dose={dose} onToggle={() => handleDoseToggle(dose)} />
                 ))}
               </View>
             </View>
@@ -206,7 +213,7 @@ export default function PeptidesScreen() {
                   item={item}
                   isEditing={editingId === item.id}
                   onToggleEdit={() => setEditingId((cur) => (cur === item.id ? null : item.id))}
-                  onSaveSchedule={(amount, timeLabel) => handleScheduleSave(item, amount, timeLabel)}
+                  onSaveSchedule={(amount, timeLabel, note) => handleScheduleSave(item, amount, timeLabel, note)}
                   onRemove={() => inventory.remove(item.id)}
                 />
               ))}
@@ -272,19 +279,21 @@ function InventoryCard({
   item: PeptideInventoryRow;
   isEditing: boolean;
   onToggleEdit: () => void;
-  onSaveSchedule: (amount: string, timeLabel: string) => void;
+  onSaveSchedule: (amount: string, timeLabel: string, note: string) => void;
   onRemove: () => void;
 }) {
   const { palette, glass } = useTheme();
   const [amount, setAmount] = useState(item.schedule_amount);
   const [timeLabel, setTimeLabel] = useState(item.schedule_time_label);
+  const [note, setNote] = useState(item.note);
 
   useEffect(() => {
     if (isEditing) {
       setAmount(item.schedule_amount);
       setTimeLabel(item.schedule_time_label);
+      setNote(item.note);
     }
-  }, [isEditing, item.schedule_amount, item.schedule_time_label]);
+  }, [isEditing, item.schedule_amount, item.schedule_time_label, item.note]);
 
   const pct = useMemo(() => {
     if (item.doses_total <= 0) return 0;
@@ -294,6 +303,7 @@ function InventoryCard({
   const hasSchedule = !!(item.schedule_amount || item.schedule_time_label);
   const onHandLabel = item.kind === 'supplement' ? 'on hand' : 'vials on hand';
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
+  const reconText = reconSummary(item) ?? item.recon;
 
   return (
     <GlassCard radius={radius.inventoryCard} style={styles.inventoryCardGap} contentStyle={styles.inventoryContent}>
@@ -303,7 +313,7 @@ function InventoryCard({
           {item.vials} {onHandLabel}
         </Text>
       </View>
-      <Text style={[styles.inventoryRecon, { color: palette.text.quaternary }]}>{item.recon}</Text>
+      {reconText ? <Text style={[styles.inventoryRecon, { color: palette.text.quaternary }]}>{reconText}</Text> : null}
       {hasSchedule ? (
         <Text style={[styles.scheduleSummary, { color: palette.text.tertiary }]}>
           Scheduled · {[item.schedule_amount, item.schedule_time_label].filter(Boolean).join(' · ')}
@@ -311,6 +321,10 @@ function InventoryCard({
       ) : (
         <Text style={[styles.scheduleSummary, { color: palette.text.faint }]}>Not scheduled</Text>
       )}
+      <Text style={[styles.frequencyTag, { color: palette.text.quaternary }]}>{frequencyLabel(item)}</Text>
+      {!isEditing && item.note ? (
+        <Text style={[styles.noteText, { color: palette.text.tertiary }]}>{item.note}</Text>
+      ) : null}
       <View style={[styles.progressTrack, { backgroundColor: palette.track }]}>
         <LinearGradient
           colors={gradient.colors}
@@ -341,25 +355,34 @@ function InventoryCard({
         </View>
       </View>
       {isEditing ? (
-        <View style={styles.scheduleForm}>
+        <View style={styles.scheduleFormWrap}>
+          <View style={styles.scheduleForm}>
+            <TextInput
+              style={[styles.input, styles.inputAmount, inputStyle]}
+              placeholder="Amount · route"
+              placeholderTextColor={palette.text.faint}
+              value={amount}
+              onChangeText={setAmount}
+            />
+            <TextInput
+              style={[styles.input, styles.inputTime, inputStyle]}
+              placeholder="Time"
+              placeholderTextColor={palette.text.faint}
+              value={timeLabel}
+              onChangeText={setTimeLabel}
+            />
+          </View>
           <TextInput
-            style={[styles.input, styles.inputAmount, inputStyle]}
-            placeholder="Amount · route"
+            style={[styles.input, styles.inputNote, inputStyle]}
+            placeholder="Note to self — e.g. bump to 300mcg after Aug 1"
             placeholderTextColor={palette.text.faint}
-            value={amount}
-            onChangeText={setAmount}
-          />
-          <TextInput
-            style={[styles.input, styles.inputTime, inputStyle]}
-            placeholder="Time"
-            placeholderTextColor={palette.text.faint}
-            value={timeLabel}
-            onChangeText={setTimeLabel}
-            onSubmitEditing={() => onSaveSchedule(amount, timeLabel)}
+            value={note}
+            onChangeText={setNote}
+            multiline
           />
           <Pressable
-            onPress={() => onSaveSchedule(amount, timeLabel)}
-            style={[styles.saveBtn, { backgroundColor: glass.borderElevated }]}
+            onPress={() => onSaveSchedule(amount, timeLabel, note)}
+            style={[styles.saveBtn, styles.saveBtnFullWidth, { backgroundColor: glass.borderElevated }]}
           >
             <Text style={[styles.saveBtnText, { color: palette.text.primaryAlt }]}>Save</Text>
           </Pressable>
@@ -377,29 +400,79 @@ function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>)
   const [recon, setRecon] = useState('');
   const [dosesLeft, setDosesLeft] = useState('');
   const [dosesTotal, setDosesTotal] = useState('');
+  const [vialMg, setVialMg] = useState('');
+  const [bacMl, setBacMl] = useState('');
+  const [doseMcg, setDoseMcg] = useState('');
+  const [frequency, setFrequency] = useState<PeptideFrequency>('daily');
+  const [frequencyN, setFrequencyN] = useState('1');
+  const [frequencyDays, setFrequencyDays] = useState<string[]>([]);
+
+  const toggleDay = (day: string) => {
+    setFrequencyDays((cur) => (cur.includes(day) ? cur.filter((d) => d !== day) : [...cur, day]));
+  };
 
   const submit = () => {
     const trimmedName = name.trim();
     if (!trimmedName) return;
     const vialsNum = Number.parseInt(vials, 10);
-    const dosesLeftNum = Number.parseInt(dosesLeft, 10);
-    const dosesTotalNum = Number.parseInt(dosesTotal, 10);
-    onAdd({
+    const vialsClean = Number.isFinite(vialsNum) ? vialsNum : 0;
+    const frequencyNNum = Number.parseInt(frequencyN, 10);
+
+    const base = {
       name: trimmedName,
-      vials: Number.isFinite(vialsNum) ? vialsNum : 0,
-      recon: recon.trim(),
-      doses_left: Number.isFinite(dosesLeftNum) ? dosesLeftNum : 0,
-      doses_total: Number.isFinite(dosesTotalNum) && dosesTotalNum > 0 ? dosesTotalNum : 1,
+      vials: vialsClean,
       kind,
       schedule_amount: '',
       schedule_time_label: '',
-    });
+      frequency,
+      frequency_n: Number.isFinite(frequencyNNum) && frequencyNNum > 0 ? frequencyNNum : 1,
+      frequency_days: frequencyDays.join(','),
+      note: '',
+    };
+
+    if (kind === 'peptide') {
+      const vialMgNum = Number.parseFloat(vialMg);
+      const bacMlNum = Number.parseFloat(bacMl);
+      const doseMcgNum = Number.parseFloat(doseMcg);
+      const vialMgClean = Number.isFinite(vialMgNum) ? vialMgNum : 0;
+      const bacMlClean = Number.isFinite(bacMlNum) ? bacMlNum : 0;
+      const doseMcgClean = Number.isFinite(doseMcgNum) ? doseMcgNum : 0;
+      const dosesTotalComputed = computeDosesTotal(vialMgClean, doseMcgClean, vialsClean);
+      onAdd({
+        ...base,
+        recon: '',
+        vial_mg: vialMgClean,
+        bac_ml: bacMlClean,
+        dose_mcg: doseMcgClean,
+        doses_total: dosesTotalComputed > 0 ? dosesTotalComputed : 1,
+        doses_left: dosesTotalComputed,
+      });
+    } else {
+      const dosesLeftNum = Number.parseInt(dosesLeft, 10);
+      const dosesTotalNum = Number.parseInt(dosesTotal, 10);
+      onAdd({
+        ...base,
+        recon: recon.trim(),
+        vial_mg: 0,
+        bac_ml: 0,
+        dose_mcg: 0,
+        doses_left: Number.isFinite(dosesLeftNum) ? dosesLeftNum : 0,
+        doses_total: Number.isFinite(dosesTotalNum) && dosesTotalNum > 0 ? dosesTotalNum : 1,
+      });
+    }
+
     setName('');
     setKind('peptide');
     setVials('');
     setRecon('');
     setDosesLeft('');
     setDosesTotal('');
+    setVialMg('');
+    setBacMl('');
+    setDoseMcg('');
+    setFrequency('daily');
+    setFrequencyN('1');
+    setFrequencyDays([]);
   };
 
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
@@ -449,54 +522,141 @@ function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>)
           keyboardType="number-pad"
         />
       </View>
-      <TextInput
-        style={[styles.input, styles.inputRecon, inputStyle]}
-        placeholder="Recon recipe (e.g. 5 mg vial · 2 mL BAC → 250 mcg = 0.10 mL)"
-        placeholderTextColor={palette.text.faint}
-        value={recon}
-        onChangeText={setRecon}
-      />
-      <View style={styles.addRow}>
-        <TextInput
-          style={[styles.input, styles.inputVials, inputStyle]}
-          placeholder="Doses left"
-          placeholderTextColor={palette.text.faint}
-          value={dosesLeft}
-          onChangeText={setDosesLeft}
-          keyboardType="number-pad"
-        />
-        <TextInput
-          style={[styles.input, styles.inputVials, inputStyle]}
-          placeholder="Doses total"
-          placeholderTextColor={palette.text.faint}
-          value={dosesTotal}
-          onChangeText={setDosesTotal}
-          keyboardType="number-pad"
-          onSubmitEditing={submit}
-        />
-        <Pressable onPress={submit} hitSlop={8} style={styles.addBtnWrap}>
-          <LinearGradient
-            colors={accent.default}
-            start={accent.diagonal().start}
-            end={accent.diagonal().end}
-            style={styles.addBtn}
-          >
-            <Text style={styles.addBtnGlyph}>+</Text>
-          </LinearGradient>
-        </Pressable>
+
+      {kind === 'peptide' ? (
+        <View style={styles.addRow}>
+          <TextInput
+            style={[styles.input, styles.inputVials, inputStyle]}
+            placeholder="Vial size (mg)"
+            placeholderTextColor={palette.text.faint}
+            value={vialMg}
+            onChangeText={setVialMg}
+            keyboardType="decimal-pad"
+          />
+          <TextInput
+            style={[styles.input, styles.inputVials, inputStyle]}
+            placeholder="BAC water (mL)"
+            placeholderTextColor={palette.text.faint}
+            value={bacMl}
+            onChangeText={setBacMl}
+            keyboardType="decimal-pad"
+          />
+          <TextInput
+            style={[styles.input, styles.inputVials, inputStyle]}
+            placeholder="Dose amount (mcg)"
+            placeholderTextColor={palette.text.faint}
+            value={doseMcg}
+            onChangeText={setDoseMcg}
+            keyboardType="decimal-pad"
+          />
+        </View>
+      ) : (
+        <>
+          <TextInput
+            style={[styles.input, styles.inputRecon, inputStyle]}
+            placeholder="Description (e.g. 5 g scoop · 1 tub = 60 servings)"
+            placeholderTextColor={palette.text.faint}
+            value={recon}
+            onChangeText={setRecon}
+          />
+          <View style={styles.addRow}>
+            <TextInput
+              style={[styles.input, styles.inputVials, inputStyle]}
+              placeholder="Doses left"
+              placeholderTextColor={palette.text.faint}
+              value={dosesLeft}
+              onChangeText={setDosesLeft}
+              keyboardType="number-pad"
+            />
+            <TextInput
+              style={[styles.input, styles.inputVials, inputStyle]}
+              placeholder="Doses total"
+              placeholderTextColor={palette.text.faint}
+              value={dosesTotal}
+              onChangeText={setDosesTotal}
+              keyboardType="number-pad"
+            />
+          </View>
+        </>
+      )}
+
+      <Text style={[styles.frequencySectionLabel, { color: palette.text.tertiary }]}>Frequency</Text>
+      <View style={styles.kindToggleRow}>
+        {FREQUENCY_OPTIONS.map((option) => {
+          const active = frequency === option.key;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => setFrequency(option.key)}
+              style={[
+                styles.kindToggleBtn,
+                { borderColor: glass.borderElevated },
+                active && { backgroundColor: withAlpha(palette.accentText, 0.22), borderColor: palette.accentText },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.kindToggleText,
+                  { color: active ? palette.accentText : palette.text.tertiary },
+                ]}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
+
+      {frequency === 'everyN' ? (
+        <TextInput
+          style={[styles.input, styles.inputFrequencyN, inputStyle]}
+          placeholder="Every N days"
+          placeholderTextColor={palette.text.faint}
+          value={frequencyN}
+          onChangeText={setFrequencyN}
+          keyboardType="number-pad"
+        />
+      ) : null}
+
+      {frequency === 'weekdays' ? (
+        <View style={styles.dayPillRow}>
+          {DAY_ABBRS.map((day) => {
+            const active = frequencyDays.includes(day);
+            return (
+              <Pressable
+                key={day}
+                onPress={() => toggleDay(day)}
+                style={[
+                  styles.dayPillBtn,
+                  { borderColor: glass.borderElevated },
+                  active && { backgroundColor: withAlpha(palette.accentText, 0.22), borderColor: palette.accentText },
+                ]}
+              >
+                <Text style={[styles.dayPillText, { color: active ? palette.accentText : palette.text.tertiary }]}>
+                  {day}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+
+      <Pressable onPress={submit} style={styles.submitBtnWrap} accessibilityRole="button" accessibilityLabel="Add to inventory">
+        <LinearGradient
+          colors={accent.default}
+          start={accent.diagonal().start}
+          end={accent.diagonal().end}
+          style={styles.submitBtn}
+        >
+          <Text style={styles.addBtnGlyph}>+</Text>
+          <Text style={styles.submitBtnText}>Add to inventory</Text>
+        </LinearGradient>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingVertical: 16,
-    paddingHorizontal: 4,
-  },
-  subtitle: {
-    fontSize: type.body.fontSize,
-  },
   sectionGap: {
     marginBottom: spacing.rowGapLg,
   },
@@ -582,20 +742,14 @@ const styles = StyleSheet.create({
   inputRecon: {
     marginTop: spacing.rowGapSm,
   },
-  addBtnWrap: {
-    flexShrink: 0,
+  inputFrequencyN: {
+    marginTop: spacing.rowGapSm,
+    width: 140,
   },
-  addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addBtnGlyph: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700',
+  inputNote: {
+    marginTop: spacing.rowGapSm,
+    minHeight: 40,
+    paddingTop: 10,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -666,6 +820,15 @@ const styles = StyleSheet.create({
     fontSize: type.meta.fontSize,
     marginTop: 4,
   },
+  frequencyTag: {
+    fontSize: type.caption.fontSize,
+    marginTop: 2,
+  },
+  noteText: {
+    fontSize: type.meta.fontSize,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
   progressTrack: {
     height: 8,
     borderRadius: 4,
@@ -694,11 +857,14 @@ const styles = StyleSheet.create({
   iconBtn: {
     paddingHorizontal: 4,
   },
+  scheduleFormWrap: {
+    marginTop: spacing.rowGapMd,
+    gap: spacing.rowGapSm,
+  },
   scheduleForm: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.rowGapSm,
-    marginTop: spacing.rowGapMd,
   },
   saveBtn: {
     height: 40,
@@ -706,6 +872,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.input,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  saveBtnFullWidth: {
+    alignSelf: 'stretch',
   },
   saveBtnText: {
     fontSize: type.metaSemibold.fontSize,
@@ -720,6 +889,7 @@ const styles = StyleSheet.create({
   },
   kindToggleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.rowGapSm,
     marginTop: spacing.rowGapSm,
   },
@@ -734,5 +904,49 @@ const styles = StyleSheet.create({
   kindToggleText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: type.metaSemibold.fontWeight,
+  },
+  frequencySectionLabel: {
+    fontSize: type.meta.fontSize,
+    fontWeight: '700',
+    marginTop: spacing.rowGapMd,
+  },
+  dayPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: spacing.rowGapSm,
+  },
+  dayPillBtn: {
+    paddingHorizontal: 10,
+    height: 30,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayPillText: {
+    fontSize: type.caption.fontSize,
+    fontWeight: '700',
+  },
+  addBtnGlyph: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  submitBtnWrap: {
+    marginTop: spacing.rowGapMd,
+  },
+  submitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 46,
+    borderRadius: radius.input,
+    gap: 8,
+  },
+  submitBtnText: {
+    color: '#ffffff',
+    fontSize: type.metaSemibold.fontSize,
+    fontWeight: '700',
   },
 });
