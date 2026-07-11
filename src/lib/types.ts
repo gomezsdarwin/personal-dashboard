@@ -64,6 +64,12 @@ export type GymSplitConfigRow = {
   /** User override for the split's display label; null/absent means "use the
    * static `SPLITS` label from workouts.ts". */
   label?: string | null;
+  /** True when this row IS a user-created split (not merely a config/label
+   * override for a built-in `SPLITS` entry). */
+  is_custom?: boolean;
+  /** True when this split (built-in or custom) has been removed from the
+   * picker. Historical `gym_sessions` rows logged under it are untouched. */
+  hidden?: boolean;
 };
 
 export type SubscriptionCategory = 'Bills' | 'Streaming' | 'Music' | 'Software' | 'Fitness' | 'Others';

@@ -110,7 +110,7 @@ export function HistoryModal({
   onDeleteEntry: (date: string) => void;
 }) {
   const { palette, glass } = useTheme();
-  const [range, setRange] = useState<string>('ALL');
+  const [range, setRange] = useState<string>('M');
 
   const history = useMemo(() => buildHistory(sessions, exercise.id), [sessions, exercise.id]);
   const today = useMemo(() => todayIso(), []);

@@ -8,7 +8,7 @@
  * `src/lib/types.ts` for `GymSessionRow` / `GymSplitConfigRow`.
  */
 
-import type { GymSessionExercise, GymSessionRow, NewRow } from '../lib/types';
+import type { GymSessionExercise, GymSessionRow, GymSplitConfigRow, NewRow } from '../lib/types';
 
 /** A single selectable exercise option within a slot (primary or alt). */
 export type ExerciseOption = {
@@ -62,6 +62,25 @@ export const DAY_SPLIT: (string | null)[] = [
 
 export function todaySplit(): string | null {
   return DAY_SPLIT[new Date().getDay()];
+}
+
+/** Merges the static `SPLITS` with any user-created splits recorded in
+ * `gym_split_config` (rows with `is_custom === true`), regardless of
+ * `hidden` status. Used for label lookups so historical sessions/logs keep
+ * resolving a real label even after a split is later hidden from the picker
+ * (see `getVisibleSplits` for the filtered, picker-facing variant). */
+export function getAllSplits(configRows: GymSplitConfigRow[]): Split[] {
+  const customSplits: Split[] = configRows
+    .filter((c) => c.is_custom)
+    .map((c) => ({ id: c.split_id, label: c.label || c.split_id, day: '', muscles: [] }));
+  return [...SPLITS, ...customSplits];
+}
+
+/** `getAllSplits` filtered down to splits not marked `hidden` — the
+ * authoritative, selectable list for the split picker. */
+export function getVisibleSplits(configRows: GymSplitConfigRow[]): Split[] {
+  const hiddenIds = new Set(configRows.filter((c) => c.hidden).map((c) => c.split_id));
+  return getAllSplits(configRows).filter((s) => !hiddenIds.has(s.id));
 }
 
 // ---------------------------------------------------------------------------

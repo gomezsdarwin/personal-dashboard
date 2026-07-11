@@ -151,6 +151,12 @@ export default function PeptidesScreen() {
     await inventory.update(item.id, { on_break: !item.on_break });
   };
 
+  const handleRemoveInventory = async (item: PeptideInventoryRow) => {
+    await inventory.remove(item.id);
+    const orphaned = doses.rows.filter((dose) => dose.name === item.name);
+    await Promise.all(orphaned.map((dose) => doses.remove(dose.id)));
+  };
+
   const handleScheduleSave = async (item: PeptideInventoryRow, amount: string, timeLabel: string, note: string) => {
     const trimmedAmount = amount.trim();
     const trimmedTime = timeLabel.trim();
@@ -228,7 +234,21 @@ export default function PeptidesScreen() {
             onAdd={async (row) => {
               setAddError(null);
               try {
-                await inventory.insert(row);
+                const created = await inventory.insert(row);
+                // A compound added with a dose + at least one scheduled day should
+                // show up in Today's Schedule immediately, not only after the
+                // separate "Edit schedule" flow is used — mirrors handleScheduleSave's
+                // insert branch below.
+                if (created.frequency_days) {
+                  await doses.insert({
+                    name: created.name,
+                    amount: created.schedule_amount,
+                    time_label: created.schedule_time_label,
+                    taken: false,
+                    scheduled_for: todayIso(),
+                    kind: created.kind,
+                  });
+                }
                 setShowAddInventory(false);
               } catch (err) {
                 setAddError(err instanceof Error ? err.message : 'Failed to add compound. Please try again.');
@@ -252,7 +272,7 @@ export default function PeptidesScreen() {
                   isEditing={editingId === item.id}
                   onToggleEdit={() => setEditingId((cur) => (cur === item.id ? null : item.id))}
                   onSaveSchedule={(amount, timeLabel, note) => handleScheduleSave(item, amount, timeLabel, note)}
-                  onRemove={() => inventory.remove(item.id)}
+                  onRemove={() => handleRemoveInventory(item)}
                   onToggleBreak={() => handleToggleBreak(item)}
                 />
               ))}
@@ -497,7 +517,7 @@ function AddInventoryForm({ onAdd }: { onAdd: (row: NewRow<PeptideInventoryRow>)
       name: trimmedName,
       vials: vialsClean,
       kind,
-      schedule_amount: '',
+      schedule_amount: doseMgClean > 0 ? `${doseMgClean} mg` : '',
       schedule_time_label: '',
       frequency: 'weekdays' as PeptideFrequency,
       frequency_n: 1,

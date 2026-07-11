@@ -6,7 +6,7 @@ import { GlassChip } from '../../components/GlassChip';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { useRepo } from '../../hooks/useRepo';
-import { SPLITS } from '../../data/workouts';
+import { getAllSplits, type Split } from '../../data/workouts';
 import type { GymSessionRow, GymSet } from '../../lib/types';
 
 /**
@@ -110,6 +110,11 @@ function buildHighlights(exerciseData: Record<string, ExercisePoint[]>, today: s
 export function StatsTab() {
   const { palette } = useTheme();
   const { rows: sessions } = useRepo('gym_sessions');
+  const { rows: configRows } = useRepo('gym_split_config');
+  // Unfiltered (includes hidden/deleted-built-in splits) so historical
+  // session labels keep resolving even after a split is removed from the
+  // picker — see LogTab's SplitPicker for the filtered, pickable list.
+  const allSplits = useMemo(() => getAllSplits(configRows), [configRows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [range, setRange] = useState<string>('1M');
   const [selected, setSelected] = useState<string | null>(null);
@@ -254,7 +259,7 @@ export function StatsTab() {
                 </View>
               )}
 
-              <SessionLog data={chartData} />
+              <SessionLog data={chartData} allSplits={allSplits} />
             </View>
           )}
         </>
@@ -270,7 +275,7 @@ export function StatsTab() {
           sortedNewestFirst.map((session) => {
             const key = `${session.date}-${session.split}`;
             const isOpen = expanded.has(key);
-            const splitLabel = SPLITS.find((s) => s.id === session.split)?.label ?? session.split;
+            const splitLabel = allSplits.find((s) => s.id === session.split)?.label ?? session.split;
             return (
               <GlassCard key={key} style={styles.sessionCard}>
                 <Pressable onPress={() => toggle(key)} style={styles.sessionHeader}>
@@ -310,7 +315,7 @@ export function StatsTab() {
 // Session log (spec §8, chart-section bottom)
 // ---------------------------------------------------------------------------
 
-function SessionLog({ data }: { data: ExercisePoint[] }) {
+function SessionLog({ data, allSplits }: { data: ExercisePoint[]; allSplits: Split[] }) {
   const { palette } = useTheme();
   const reversed = [...data].reverse();
   if (reversed.length === 0) {
@@ -327,7 +332,7 @@ function SessionLog({ data }: { data: ExercisePoint[] }) {
         // before this one — i.e. the next entry in the reverse-chronological list.
         const prev = reversed[i + 1];
         const bumped = prev != null && entry.weight > prev.weight;
-        const splitLabel = SPLITS.find((s) => s.id === entry.split)?.label ?? entry.split;
+        const splitLabel = allSplits.find((s) => s.id === entry.split)?.label ?? entry.split;
         return (
           <View
             key={`${entry.date}-${i}`}

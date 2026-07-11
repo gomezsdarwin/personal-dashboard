@@ -10,12 +10,15 @@ import { SplitEditor } from './SplitEditor';
 import { HistoryModal } from './HistoryModal';
 import {
   SPLITS,
+  getAllSplits,
+  getVisibleSplits,
   getDefaultSlots,
   getMuscle,
   getSlotOptions,
   findSlot,
   todaySplit,
   type ExerciseOption,
+  type Split,
 } from '../../data/workouts';
 import type { GymSessionExercise, GymSessionRow, GymSet, GymSplitConfigEntry } from '../../lib/types';
 
@@ -146,7 +149,8 @@ function buildExerciseList(
  * alternatives so the Swap sheet still lists them for an already-logged day. */
 function rehydrateFromSession(
   session: GymSessionRow,
-  config: GymSplitConfigEntry[] | null
+  config: GymSplitConfigEntry[] | null,
+  lastData: Record<string, GymSet[]>
 ): { exercises: LocalExercise[]; collapsed: Set<number> } {
   const extraOptionsBySlot = new Map<string, ExerciseOption[]>();
   const removedOptionIdsBySlot = new Map<string, string[]>();
@@ -162,13 +166,20 @@ function rehydrateFromSession(
   const exercises = session.exercises.map((ex, idx) => {
     const slot = ex.slot || findSlot(ex.id);
     const options = mergeSlotOptions(slot, extraOptionsBySlot.get(slot), removedOptionIdsBySlot.get(slot));
-    const sets = ex.sets.map((s) => {
+    const priorSets = lastData[ex.id];
+    const sets = ex.sets.map((s, setIdx) => {
       const hit = hasRepValue(s.reps);
+      // A set not yet committed today still needs its hit/miss target carried
+      // forward from the prior session — otherwise a mid-session auto-persist
+      // (which re-runs this rehydration) would silently downgrade untouched
+      // sets from hit/miss buttons to a bare reps box.
+      const priorReps = priorSets?.[setIdx]?.reps;
+      const carriedTarget = !hit && priorReps != null && hasRepValue(priorReps) ? priorReps : null;
       return {
         weight: s.weight,
         reps: s.reps,
         status: (hit ? 'hit' : 'pending') as SetStatus,
-        target: hit ? s.reps : null,
+        target: hit ? s.reps : carriedTarget,
       };
     }) as [LocalSet, LocalSet, LocalSet];
     if (sets.every((s) => s.status !== 'pending')) collapsed.add(idx);
@@ -209,13 +220,28 @@ export function LogTab() {
 
   const lastData = useMemo(() => buildLastData(sessionsRepo.rows, today), [sessionsRepo.rows, today]);
 
+  // Unfiltered (includes hidden) so label lookups always resolve — see
+  // `visibleSplits` below for the picker's filtered list.
+  const allSplits = useMemo(() => getAllSplits(configRepo.rows), [configRepo.rows]);
+  const visibleSplits = useMemo(() => getVisibleSplits(configRepo.rows), [configRepo.rows]);
+
   const splitLabels = useMemo(() => {
     const map: Record<string, string> = {};
-    for (const s of SPLITS) {
+    for (const s of allSplits) {
       map[s.id] = configRepo.rows.find((c) => c.split_id === s.id)?.label || s.label;
     }
     return map;
-  }, [configRepo.rows]);
+  }, [allSplits, configRepo.rows]);
+
+  // If the selected split gets hidden/deleted (by this device or another),
+  // fall back to the "no split selected" state rather than showing a split
+  // that's no longer pickable.
+  useEffect(() => {
+    if (configRepo.loading) return;
+    if (selectedSplit && !visibleSplits.some((s) => s.id === selectedSplit)) {
+      setSelectedSplit(null);
+    }
+  }, [selectedSplit, visibleSplits, configRepo.loading]);
 
   // Rebuild/rehydrate the exercise list whenever the selected split changes,
   // or the underlying repos settle/mutate (e.g. right after Save Session).
@@ -241,7 +267,7 @@ export function LogTab() {
       return;
     }
     if (existing) {
-      const { exercises: ex, collapsed: col } = rehydrateFromSession(existing, configRow?.config ?? null);
+      const { exercises: ex, collapsed: col } = rehydrateFromSession(existing, configRow?.config ?? null, lastData);
       setExercises(ex);
       setCollapsed(col);
       setCurrentSessionId(existing.id);
@@ -374,10 +400,19 @@ export function LogTab() {
 
   async function handleEditorSave(newConfig: GymSplitConfigEntry[], newLabel: string) {
     if (!selectedSplit) return;
-    const defaultLabel = SPLITS.find((s) => s.id === selectedSplit)?.label ?? selectedSplit;
-    const trimmed = newLabel.trim();
-    const labelOverride = trimmed && trimmed !== defaultLabel ? trimmed : null;
     const existingConfig = configRepo.rows.find((c) => c.split_id === selectedSplit);
+    const trimmed = newLabel.trim();
+    // Custom splits have no static `SPLITS` label to fall back to, so their
+    // label is always persisted directly rather than treated as an
+    // "override" of a default (an unchanged label must not be written as
+    // null, since null would otherwise resolve back to the raw split id).
+    let labelOverride: string | null;
+    if (existingConfig?.is_custom) {
+      labelOverride = trimmed || splitLabels[selectedSplit] || selectedSplit;
+    } else {
+      const defaultLabel = SPLITS.find((s) => s.id === selectedSplit)?.label ?? selectedSplit;
+      labelOverride = trimmed && trimmed !== defaultLabel ? trimmed : null;
+    }
     if (existingConfig) {
       await configRepo.update(existingConfig.id, { split_id: selectedSplit, config: newConfig, label: labelOverride });
     } else {
@@ -388,6 +423,30 @@ export function LogTab() {
     setSwapOpenIdx(null);
     setSaved(false);
     setEditMode(false);
+  }
+
+  // --- create/delete splits (Gym tab: manage splits) --------------------
+
+  async function createSplit(label: string) {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    const id = `custom_split_${Date.now()}`;
+    await configRepo.insert({ split_id: id, config: [], label: trimmed, is_custom: true });
+    setSelectedSplit(id);
+  }
+
+  async function deleteSplit(splitId: string) {
+    const configRow = configRepo.rows.find((c) => c.split_id === splitId);
+    if (configRow?.is_custom) {
+      await configRepo.remove(configRow.id);
+    } else if (configRow) {
+      await configRepo.update(configRow.id, { hidden: true });
+    } else {
+      await configRepo.insert({ split_id: splitId, config: [], hidden: true });
+    }
+    if (selectedSplit === splitId) {
+      setSelectedSplit(null);
+    }
   }
 
   // --- session history deletion (spec-adjacent; opened from HistoryModal) ----
@@ -476,8 +535,11 @@ export function LogTab() {
       <SplitPicker
         selected={selectedSplit}
         labels={splitLabels}
+        splits={visibleSplits}
         onSelect={setSelectedSplit}
         onEdit={() => setEditMode(true)}
+        onCreate={createSplit}
+        onDelete={deleteSplit}
       />
 
       {!selectedSplit ? (
@@ -591,29 +653,62 @@ export function LogTab() {
 function SplitPicker({
   selected,
   labels,
+  splits,
   onSelect,
   onEdit,
+  onCreate,
+  onDelete,
 }: {
   selected: string | null;
   labels: Record<string, string>;
+  splits: Split[];
   onSelect: (id: string | null) => void;
   onEdit: () => void;
+  onCreate: (label: string) => Promise<void>;
+  onDelete: (id: string) => void;
 }) {
   const { palette, glass } = useTheme();
   const [listOpen, setListOpen] = useState(false);
-  const selectedLabel = selected != null ? labels[selected] ?? SPLITS.find((s) => s.id === selected)?.label ?? selected : null;
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [newSplitName, setNewSplitName] = useState('');
+  const selectedLabel = selected != null ? labels[selected] ?? splits.find((s) => s.id === selected)?.label ?? selected : null;
+
+  function closeList() {
+    setListOpen(false);
+    setConfirmDeleteId(null);
+    setNewSplitName('');
+  }
+
+  async function handleCreate() {
+    const trimmed = newSplitName.trim();
+    if (!trimmed) return;
+    await onCreate(trimmed);
+    closeList();
+  }
+
+  function handleDeletePress(id: string) {
+    if (confirmDeleteId === id) {
+      onDelete(id);
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+    }
+  }
 
   return (
     <View style={styles.splitPickerRow}>
-      <Pressable
-        style={[styles.splitButton, { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' }]}
-        onPress={() => setListOpen(true)}
-      >
-        <Text style={[styles.splitButtonText, { color: selectedLabel ? palette.text.primaryAlt : palette.text.tertiary }]}>
-          {selectedLabel ?? 'Choose a split'}
-        </Text>
-        <MaterialCommunityIcons name="chevron-down" size={16} color={palette.text.tertiary} />
-      </Pressable>
+      <View style={styles.splitButtonShadow}>
+        <View style={[styles.splitButtonClip, { borderColor: glass.borderBase }]}>
+          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+          <Pressable style={styles.splitButton} onPress={() => setListOpen(true)}>
+            <Text style={[styles.splitButtonText, { color: selectedLabel ? palette.text.primaryAlt : palette.text.tertiary }]}>
+              {selectedLabel ?? 'Choose a split'}
+            </Text>
+            <MaterialCommunityIcons name="chevron-down" size={16} color={palette.text.tertiary} />
+          </Pressable>
+        </View>
+      </View>
       {/* Edit button (split config editor) — only visible once a split is
        * selected, per spec §6.8. */}
       {selected != null && (
@@ -624,31 +719,57 @@ function SplitPicker({
       )}
 
       {listOpen && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setListOpen(false)}>
-          <Pressable style={styles.scrim} onPress={() => setListOpen(false)}>
+        <Modal visible transparent animationType="fade" onRequestClose={closeList}>
+          <Pressable style={styles.scrim} onPress={closeList}>
             <Pressable style={styles.sheetWrap} onPress={(e) => e.stopPropagation()}>
               <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
               <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
               <View style={styles.sheet}>
                 <View style={[styles.sheetHandle, { backgroundColor: palette.track }]} />
                 <Text style={[styles.sheetTitle, { color: palette.text.primary }]}>Choose a split</Text>
-                {SPLITS.map((s) => {
+                {splits.map((s) => {
                   const active = s.id === selected;
+                  const confirming = confirmDeleteId === s.id;
                   return (
-                    <Pressable
-                      key={s.id}
-                      style={[styles.swapRow, active && { backgroundColor: palette.successBg }]}
-                      onPress={() => {
-                        onSelect(s.id);
-                        setListOpen(false);
-                      }}
-                    >
-                      <Text style={[styles.swapRowName, { color: active ? palette.success : palette.text.primary }]}>
-                        {labels[s.id] ?? s.label}
-                      </Text>
-                    </Pressable>
+                    <View key={s.id} style={[styles.swapRow, active && { backgroundColor: palette.successBg }]}>
+                      <Pressable
+                        style={styles.splitRowMain}
+                        onPress={() => {
+                          onSelect(s.id);
+                          closeList();
+                        }}
+                      >
+                        <Text style={[styles.swapRowName, { color: active ? palette.success : palette.text.primary }]}>
+                          {labels[s.id] ?? s.label}
+                        </Text>
+                        {confirming && (
+                          <Text style={[styles.confirmDeleteHint, { color: palette.danger }]}>Tap again to remove</Text>
+                        )}
+                      </Pressable>
+                      <Pressable hitSlop={8} style={styles.splitRowDelete} onPress={() => handleDeletePress(s.id)}>
+                        <MaterialCommunityIcons
+                          name={confirming ? 'trash-can' : 'trash-can-outline'}
+                          size={16}
+                          color={confirming ? palette.danger : palette.text.tertiary}
+                        />
+                      </Pressable>
+                    </View>
                   );
                 })}
+
+                <View style={styles.createRow}>
+                  <TextInput
+                    style={[styles.createInput, { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primaryAlt }]}
+                    placeholder="New split name"
+                    placeholderTextColor={palette.text.faint}
+                    value={newSplitName}
+                    onChangeText={setNewSplitName}
+                    onSubmitEditing={handleCreate}
+                  />
+                  <Pressable style={[styles.createBtn, { backgroundColor: palette.accentText }]} onPress={handleCreate}>
+                    <Text style={styles.createBtnText}>+ Create</Text>
+                  </Pressable>
+                </View>
               </View>
             </Pressable>
           </Pressable>
@@ -954,15 +1075,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  splitButton: {
+  splitButtonShadow: {
     flex: 1,
+    borderRadius: radius.chip,
+    shadowColor: 'rgba(0,0,0,0.28)',
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  splitButtonClip: {
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  splitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 11,
-    borderRadius: radius.chip,
-    borderWidth: 1,
   },
   splitButtonText: {
     fontSize: type.metaSemibold.fontSize,
@@ -1203,6 +1335,41 @@ const styles = StyleSheet.create({
   },
   swapRowWeight: {
     fontSize: type.meta.fontSize,
+  },
+  splitRowMain: {
+    flex: 1,
+  },
+  splitRowDelete: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  confirmDeleteHint: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  createRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  createInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    fontSize: type.itemTitle.fontSize,
+  },
+  createBtn: {
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    borderRadius: radius.input,
+  },
+  createBtnText: {
+    fontSize: type.metaSemibold.fontSize,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });
 
