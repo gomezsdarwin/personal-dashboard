@@ -61,11 +61,14 @@ export default function GymTab() {
         })}
       </View>
 
-      {/* key={activeTab} forces a fresh mount per switch, mirroring the spec's
-          fadeUp-replay-on-switch behavior (AppShell already animates mount-in). */}
-      <View key={activeTab} style={styles.content}>
-        {activeTab === 'LOG' && <LogTab />}
-        {activeTab === 'STATS' && <StatsTab />}
+      {/* LogTab stays mounted across sub-tab switches so in-progress logging
+          isn't wiped (see Package B fix #4); StatsTab still remounts per
+          switch for the fadeUp-replay behavior. */}
+      <View style={styles.content}>
+        <View style={activeTab === 'LOG' ? undefined : styles.hiddenPane}>
+          <LogTab />
+        </View>
+        {activeTab === 'STATS' && <StatsTab key={activeTab} />}
       </View>
     </AppShell>
   );
@@ -106,5 +109,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  hiddenPane: {
+    display: 'none',
   },
 });

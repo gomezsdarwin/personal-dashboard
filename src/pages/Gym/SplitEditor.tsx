@@ -23,6 +23,9 @@ type EditorRow = {
   // Library-row-only fields:
   options: ExerciseOption[];
   selectedId: string;
+  /** Base-library option ids the user explicitly removed for this slot
+   * (library-row-only; persisted via `GymSplitConfigEntry.removedOptionIds`). */
+  removedBaseIds: Set<string>;
   // Custom-row-only fields:
   name: string;
   defaultWeight: number;
@@ -38,6 +41,7 @@ function libraryRow(id: string, muscle: string, enabled: boolean): EditorRow {
     muscle,
     options,
     selectedId: id,
+    removedBaseIds: new Set(),
     name: primary?.name ?? id,
     defaultWeight: primary?.defaultWeight ?? 0,
   };
@@ -51,6 +55,7 @@ function customRow(entry: Extract<GymSplitConfigEntry, { custom: true }>): Edito
     muscle: entry.muscle,
     options: [],
     selectedId: entry.id,
+    removedBaseIds: new Set(),
     name: entry.name,
     defaultWeight: entry.defaultWeight,
   };
@@ -69,14 +74,17 @@ function buildRows(splitId: string, currentConfig: GymSplitConfigEntry[] | null)
         customRows.push(customRow(entry));
       } else {
         const row = libraryRow(entry.slot, getMuscle(entry.slot) ?? '', true);
-        // Re-merge any previously-added custom alternatives (persisted on the
-        // config entry, since they aren't part of the static MUSCLES library).
+        // Drop any base options the user explicitly removed, then re-merge any
+        // previously-added custom alternatives (persisted on the config entry,
+        // since they aren't part of the static MUSCLES library).
+        const removedBaseIds = new Set(entry.removedOptionIds ?? []);
+        const baseOptions = removedBaseIds.size > 0 ? row.options.filter((o) => !removedBaseIds.has(o.id)) : row.options;
         const options =
           entry.extraOptions && entry.extraOptions.length > 0
-            ? [...row.options, ...entry.extraOptions.filter((o) => !row.options.some((x) => x.id === o.id))]
-            : row.options;
+            ? [...baseOptions, ...entry.extraOptions.filter((o) => !baseOptions.some((x) => x.id === o.id))]
+            : baseOptions;
         const selected = options.find((o) => o.id === entry.id) ?? options[0];
-        enabledRows.push({ ...row, options, selectedId: selected?.id ?? entry.id, name: selected?.name ?? row.name });
+        enabledRows.push({ ...row, options, removedBaseIds, selectedId: selected?.id ?? entry.id, name: selected?.name ?? row.name });
       }
     }
 
@@ -205,20 +213,26 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
     setRows((prev) => prev.filter((r) => r.slot !== slot));
   }
 
-  /** Removes a user-added alternative (`id`) from a library row's `options`.
-   * If the removed alt was the active selection, falls back to the row's
-   * first remaining option, or the base library's primary option if no alts
-   * remain (mirrors `pickAlt`/`addAlternative`'s state-update pattern). */
+  /** Removes any alternative (`id`) — built-in library option or user-added —
+   * from a library row's `options`, never down to zero (callers must not
+   * invoke this when only one option remains). Base-library removals are
+   * recorded in `removedBaseIds` so they persist across save/reload instead
+   * of being re-merged back in from the static library. If the removed alt
+   * was the active selection, falls back to the row's first remaining option
+   * (mirrors `pickAlt`/`addAlternative`'s state-update pattern). */
   function removeAlternative(slot: string, id: string) {
     setRows((prev) =>
       prev.map((r) => {
-        if (r.slot !== slot || r.custom) return r;
+        if (r.slot !== slot || r.custom || r.options.length <= 1) return r;
         const options = r.options.filter((o) => o.id !== id);
-        if (id !== r.selectedId) return { ...r, options };
-        const fallback = options[0] ?? getSlotOptions(r.slot)[0];
+        const isBaseOption = getSlotOptions(r.slot).some((o) => o.id === id);
+        const removedBaseIds = isBaseOption ? new Set(r.removedBaseIds).add(id) : r.removedBaseIds;
+        if (id !== r.selectedId) return { ...r, options, removedBaseIds };
+        const fallback = options[0];
         return {
           ...r,
           options,
+          removedBaseIds,
           selectedId: fallback?.id ?? r.slot,
           name: fallback?.name ?? r.name,
           defaultWeight: fallback?.defaultWeight ?? r.defaultWeight,
@@ -239,6 +253,7 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
       muscle: newMuscle,
       options: [],
       selectedId: id,
+      removedBaseIds: new Set(),
       name,
       defaultWeight: Number.isFinite(weight) ? weight : 0,
     };
@@ -263,9 +278,13 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
         }
         const baseOptions = getSlotOptions(r.slot);
         const extraOptions = r.options.filter((o) => !baseOptions.some((b) => b.id === o.id));
-        return extraOptions.length > 0
-          ? { slot: r.slot, id: r.selectedId, extraOptions }
-          : { slot: r.slot, id: r.selectedId };
+        const removedOptionIds = Array.from(r.removedBaseIds).filter((id) => baseOptions.some((b) => b.id === id));
+        return {
+          slot: r.slot,
+          id: r.selectedId,
+          ...(extraOptions.length > 0 ? { extraOptions } : {}),
+          ...(removedOptionIds.length > 0 ? { removedOptionIds } : {}),
+        };
       });
     onSave(config, labelInput);
   }
@@ -398,10 +417,6 @@ function EditorRowView({
   const [altName, setAltName] = useState('');
   const [altWeight, setAltWeight] = useState('');
 
-  // Names of this slot's base library options (primary + built-in alts) —
-  // anything in `row.options` beyond this set is user-added and removable.
-  const baseOptionIds = new Set(getSlotOptions(row.slot).map((o) => o.id));
-
   const suggestions =
     altName.trim().length > 0
       ? namePool
@@ -448,7 +463,6 @@ function EditorRowView({
             {row.options.length > 1 &&
               row.options.map((opt) => {
                 const active = opt.id === row.selectedId;
-                const removable = !baseOptionIds.has(opt.id);
                 return (
                   <View
                     key={opt.id}
@@ -462,11 +476,9 @@ function EditorRowView({
                     <Pressable onPress={() => onPickAlt(opt.id)} hitSlop={4}>
                       <Text style={[styles.altPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{opt.name}</Text>
                     </Pressable>
-                    {removable && (
-                      <Pressable onPress={() => onRemoveAlt(opt.id)} hitSlop={8} style={styles.altPillRemove}>
-                        <Text style={[styles.altPillRemoveText, { color: active ? '#ffffff' : palette.text.tertiary }]}>×</Text>
-                      </Pressable>
-                    )}
+                    <Pressable onPress={() => onRemoveAlt(opt.id)} hitSlop={8} style={styles.altPillRemove}>
+                      <Text style={[styles.altPillRemoveText, { color: active ? '#ffffff' : palette.text.tertiary }]}>×</Text>
+                    </Pressable>
                   </View>
                 );
               })}

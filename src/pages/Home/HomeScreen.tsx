@@ -33,7 +33,7 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks');
-  const { palette, glass, mode, todoCollapsed, setTodoCollapsed } = useTheme();
+  const { palette, glass, mode, todoCollapsed, setTodoCollapsed, displayName } = useTheme();
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
@@ -145,7 +145,7 @@ export default function HomeScreen() {
   return (
     <AppShell>
       <View style={styles.header}>
-        <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}, welcome back!</Text>
+        <Text style={[styles.greeting, { color: palette.text.secondary }]}>{`${greeting}, ${displayName.trim() || 'there'}!`}</Text>
         <Text style={[styles.dateLine, { color: palette.text.secondary }]}>{dateStr}</Text>
       </View>
 

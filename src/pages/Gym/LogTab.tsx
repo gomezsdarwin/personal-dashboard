@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GlassCard } from '../../components/GlassCard';
@@ -70,9 +70,16 @@ function buildLastData(sessions: GymSessionRow[], today: string): Record<string,
 }
 
 /** Merges a slot's static-library options with any user-added alternatives
- * persisted on the split config entry (see `GymSplitConfigEntry.extraOptions`). */
-function mergeSlotOptions(slot: string, extraOptions: ExerciseOption[] | undefined): ExerciseOption[] {
-  const options = getSlotOptions(slot);
+ * persisted on the split config entry (see `GymSplitConfigEntry.extraOptions`),
+ * excluding any base options the user explicitly removed (see
+ * `GymSplitConfigEntry.removedOptionIds`). */
+function mergeSlotOptions(
+  slot: string,
+  extraOptions: ExerciseOption[] | undefined,
+  removedOptionIds?: string[]
+): ExerciseOption[] {
+  const removed = removedOptionIds && removedOptionIds.length > 0 ? new Set(removedOptionIds) : null;
+  const options = removed ? getSlotOptions(slot).filter((o) => !removed.has(o.id)) : getSlotOptions(slot);
   if (!extraOptions || extraOptions.length === 0) return options;
   return [...options, ...extraOptions.filter((o) => !options.some((x) => x.id === o.id))];
 }
@@ -119,7 +126,7 @@ function buildExerciseList(
       });
       continue;
     }
-    const options = mergeSlotOptions(entry.slot, entry.extraOptions);
+    const options = mergeSlotOptions(entry.slot, entry.extraOptions, entry.removedOptionIds);
     if (options.length === 0) continue; // slot no longer exists in the library
     const selected = options.find((o) => o.id === entry.id) ?? options[0];
     built.push({
@@ -142,15 +149,19 @@ function rehydrateFromSession(
   config: GymSplitConfigEntry[] | null
 ): { exercises: LocalExercise[]; collapsed: Set<number> } {
   const extraOptionsBySlot = new Map<string, ExerciseOption[]>();
+  const removedOptionIdsBySlot = new Map<string, string[]>();
   for (const entry of config ?? []) {
     if (!entry.custom && entry.extraOptions && entry.extraOptions.length > 0) {
       extraOptionsBySlot.set(entry.slot, entry.extraOptions);
+    }
+    if (!entry.custom && entry.removedOptionIds && entry.removedOptionIds.length > 0) {
+      removedOptionIdsBySlot.set(entry.slot, entry.removedOptionIds);
     }
   }
   const collapsed = new Set<number>();
   const exercises = session.exercises.map((ex, idx) => {
     const slot = ex.slot || findSlot(ex.id);
-    const options = mergeSlotOptions(slot, extraOptionsBySlot.get(slot));
+    const options = mergeSlotOptions(slot, extraOptionsBySlot.get(slot), removedOptionIdsBySlot.get(slot));
     const sets = ex.sets.map((s) => {
       const hit = hasRepValue(s.reps);
       return {
@@ -194,6 +205,7 @@ export function LogTab() {
   const [saved, setSaved] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
+  const skipNextAutoPersist = useRef(true);
 
   const lastData = useMemo(() => buildLastData(sessionsRepo.rows, today), [sessionsRepo.rows, today]);
 
@@ -209,6 +221,7 @@ export function LogTab() {
   // or the underlying repos settle/mutate (e.g. right after Save Session).
   useEffect(() => {
     if (sessionsRepo.loading || configRepo.loading) return;
+    skipNextAutoPersist.current = true;
     if (!selectedSplit) {
       setExercises([]);
       setCollapsed(new Set());
@@ -220,6 +233,13 @@ export function LogTab() {
     }
     const configRow = configRepo.rows.find((c) => c.split_id === selectedSplit);
     const existing = sessionsRepo.rows.find((s) => s.date === today && s.split === selectedSplit);
+    if (existing && existing.id === currentSessionId) {
+      // sessionsRepo.rows just changed because our own persistDraft/saveSession
+      // wrote to this exact session (auto-persist runs on every pause in
+      // typing) — local `exercises` state is already authoritative, so skip
+      // the full rebuild to avoid clobbering in-progress, uncommitted input.
+      return;
+    }
     if (existing) {
       const { exercises: ex, collapsed: col } = rehydrateFromSession(existing, configRow?.config ?? null);
       setExercises(ex);
@@ -272,30 +292,45 @@ export function LogTab() {
   }
 
   function setMissReps(exIdx: number, setIdx: number, value: string) {
-    const ex = exercises[exIdx];
     mutateSet(exIdx, setIdx, (s) => ({ ...s, reps: value }));
-    if (value.trim() !== '') {
-      const nextSets = ex.sets.map((s, j) => (j === setIdx ? { ...s, reps: value } : s)) as [LocalSet, LocalSet, LocalSet];
-      checkAutoCollapse(exIdx, nextSets);
+  }
+
+  function commitMissReps(exIdx: number, setIdx: number) {
+    const ex = exercises[exIdx];
+    const reps = ex.sets[setIdx].reps;
+    const strReps = typeof reps === 'number' ? String(reps) : reps;
+    if (strReps.trim() !== '') {
+      checkAutoCollapse(exIdx, ex.sets);
     }
+    void persistDraft();
   }
 
   function directLog(exIdx: number, setIdx: number, value: string) {
+    mutateSet(exIdx, setIdx, (s) => ({ ...s, reps: value }));
+  }
+
+  function commitDirectLog(exIdx: number, setIdx: number) {
     const ex = exercises[exIdx];
-    const status: SetStatus = value.trim() !== '' ? 'hit' : 'pending';
-    mutateSet(exIdx, setIdx, (s) => ({ ...s, reps: value, status }));
+    const reps = ex.sets[setIdx].reps;
+    const strReps = typeof reps === 'number' ? String(reps) : reps;
+    const status: SetStatus = strReps.trim() !== '' ? 'hit' : 'pending';
+    const nextSets = ex.sets.map((s, j) => (j === setIdx ? { ...s, status } : s)) as [LocalSet, LocalSet, LocalSet];
+    const nextExercises = exercises.map((e, i) => (i === exIdx ? { ...e, sets: nextSets } : e));
+    setExercises(nextExercises);
+    setSaved(false);
     if (status === 'hit') {
-      const nextSets = ex.sets.map((s, j) => (j === setIdx ? { ...s, reps: value, status } : s)) as [
-        LocalSet,
-        LocalSet,
-        LocalSet,
-      ];
       checkAutoCollapse(exIdx, nextSets);
     }
+    void persistDraft(nextExercises);
   }
 
   function updateHitReps(exIdx: number, setIdx: number, value: string) {
-    mutateSet(exIdx, setIdx, (s) => ({ ...s, reps: value }));
+    const ex = exercises[exIdx];
+    const nextSets = ex.sets.map((s, j) => (j === setIdx ? { ...s, reps: value } : s)) as [LocalSet, LocalSet, LocalSet];
+    const nextExercises = exercises.map((e, i) => (i === exIdx ? { ...e, sets: nextSets } : e));
+    setExercises(nextExercises);
+    setSaved(false);
+    void persistDraft(nextExercises);
   }
 
   function resetSet(exIdx: number, setIdx: number) {
@@ -308,10 +343,12 @@ export function LogTab() {
   }
 
   function updateWeight(exIdx: number, value: number | string) {
-    mutateExercise(exIdx, (ex) => ({
-      ...ex,
-      sets: ex.sets.map((s) => ({ ...s, weight: value })) as [LocalSet, LocalSet, LocalSet],
-    }));
+    const ex = exercises[exIdx];
+    const nextSets = ex.sets.map((s) => ({ ...s, weight: value })) as [LocalSet, LocalSet, LocalSet];
+    const nextExercises = exercises.map((e, i) => (i === exIdx ? { ...e, sets: nextSets } : e));
+    setExercises(nextExercises);
+    setSaved(false);
+    void persistDraft(nextExercises);
   }
 
   function swapExercise(exIdx: number, newId: string) {
@@ -368,14 +405,22 @@ export function LogTab() {
 
   // --- save session (spec §6.9) ----------------------------------------------
 
-  async function saveSession() {
+  async function persistDraft(source: LocalExercise[] = exercises) {
     if (!selectedSplit) return;
-    const payload: GymSessionExercise[] = exercises.map((ex) => ({
+    // Sets still 'pending' may hold an uncommitted in-progress keystroke (see
+    // directLog/setMissReps) — only persist reps once a set is actually
+    // committed (hit/miss), so auto-persist can't be mistaken for a commit by
+    // rehydrateFromSession's hasRepValue check.
+    const payload: GymSessionExercise[] = source.map((ex) => ({
       slot: ex.slot,
       id: ex.id,
       name: ex.name,
       muscle: ex.muscle,
-      sets: ex.sets.map((s) => ({ weight: s.weight, reps: s.reps })) as [GymSet, GymSet, GymSet],
+      sets: ex.sets.map((s) => ({ weight: s.weight, reps: s.status === 'pending' ? '' : s.reps })) as [
+        GymSet,
+        GymSet,
+        GymSet,
+      ],
     }));
     const existing = sessionsRepo.rows.find((s) => s.date === today && s.split === selectedSplit);
     if (existing) {
@@ -385,8 +430,42 @@ export function LogTab() {
       const created = await sessionsRepo.insert({ date: today, split: selectedSplit, exercises: payload });
       setCurrentSessionId(created.id);
     }
+  }
+
+  async function saveSession() {
+    if (!selectedSplit) return;
+    await persistDraft();
     setSaved(true);
   }
+
+  // Auto-persist in-progress logging so it survives sub-tab switches, app
+  // backgrounding, and page reloads (skip the run right after mount/rehydration).
+  useEffect(() => {
+    if (skipNextAutoPersist.current) {
+      skipNextAutoPersist.current = false;
+      return;
+    }
+    if (!selectedSplit || exercises.length === 0) return;
+    const timer = setTimeout(() => {
+      void persistDraft();
+    }, 700);
+    const flush = () => {
+      if (document.hidden) {
+        clearTimeout(timer);
+        void persistDraft();
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', flush);
+    }
+    return () => {
+      clearTimeout(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', flush);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercises]);
 
   // --- render ------------------------------------------------------------
 
@@ -458,7 +537,9 @@ export function LogTab() {
                 onHit={(setIdx) => hitSet(idx, setIdx)}
                 onMissStart={(setIdx) => startMiss(idx, setIdx)}
                 onMissChange={(setIdx, value) => setMissReps(idx, setIdx, value)}
+                onMissCommit={(setIdx) => commitMissReps(idx, setIdx)}
                 onDirectLog={(setIdx, value) => directLog(idx, setIdx, value)}
+                onDirectLogCommit={(setIdx) => commitDirectLog(idx, setIdx)}
                 onReset={(setIdx) => resetSet(idx, setIdx)}
               />
             )
@@ -503,7 +584,8 @@ export function LogTab() {
 }
 
 // ---------------------------------------------------------------------------
-// SplitPicker — horizontal pill row (RN has no <select>; see spec §6.2)
+// SplitPicker — button that opens a modal list (RN has no <select>; see spec
+// §6.2). Reuses the same Modal + translucent scrim pattern as SwapModal.
 // ---------------------------------------------------------------------------
 
 function SplitPicker({
@@ -517,25 +599,21 @@ function SplitPicker({
   onSelect: (id: string | null) => void;
   onEdit: () => void;
 }) {
-  const { palette } = useTheme();
+  const { palette, glass } = useTheme();
+  const [listOpen, setListOpen] = useState(false);
+  const selectedLabel = selected != null ? labels[selected] ?? SPLITS.find((s) => s.id === selected)?.label ?? selected : null;
+
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.splitScroll} contentContainerStyle={styles.splitRow}>
-      {SPLITS.map((s) => {
-        const active = s.id === selected;
-        return (
-          <Pressable
-            key={s.id}
-            style={[
-              styles.splitPill,
-              { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
-              active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
-            ]}
-            onPress={() => onSelect(s.id)}
-          >
-            <Text style={[styles.splitPillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{labels[s.id] ?? s.label}</Text>
-          </Pressable>
-        );
-      })}
+    <View style={styles.splitPickerRow}>
+      <Pressable
+        style={[styles.splitButton, { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' }]}
+        onPress={() => setListOpen(true)}
+      >
+        <Text style={[styles.splitButtonText, { color: selectedLabel ? palette.text.primaryAlt : palette.text.tertiary }]}>
+          {selectedLabel ?? 'Choose a split'}
+        </Text>
+        <MaterialCommunityIcons name="chevron-down" size={16} color={palette.text.tertiary} />
+      </Pressable>
       {/* Edit button (split config editor) — only visible once a split is
        * selected, per spec §6.8. */}
       {selected != null && (
@@ -544,7 +622,39 @@ function SplitPicker({
           <Text style={[styles.editBtnText, { color: palette.text.tertiary }]}>Edit</Text>
         </Pressable>
       )}
-    </ScrollView>
+
+      {listOpen && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setListOpen(false)}>
+          <Pressable style={styles.scrim} onPress={() => setListOpen(false)}>
+            <Pressable style={styles.sheetWrap} onPress={(e) => e.stopPropagation()}>
+              <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+              <View style={styles.sheet}>
+                <View style={[styles.sheetHandle, { backgroundColor: palette.track }]} />
+                <Text style={[styles.sheetTitle, { color: palette.text.primary }]}>Choose a split</Text>
+                {SPLITS.map((s) => {
+                  const active = s.id === selected;
+                  return (
+                    <Pressable
+                      key={s.id}
+                      style={[styles.swapRow, active && { backgroundColor: palette.successBg }]}
+                      onPress={() => {
+                        onSelect(s.id);
+                        setListOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.swapRowName, { color: active ? palette.success : palette.text.primary }]}>
+                        {labels[s.id] ?? s.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+    </View>
   );
 }
 
@@ -571,7 +681,9 @@ type ExerciseCardProps = {
   onHit: (setIdx: number) => void;
   onMissStart: (setIdx: number) => void;
   onMissChange: (setIdx: number, value: string) => void;
+  onMissCommit: (setIdx: number) => void;
   onDirectLog: (setIdx: number, value: string) => void;
+  onDirectLogCommit: (setIdx: number) => void;
   onReset: (setIdx: number) => void;
 };
 
@@ -642,7 +754,9 @@ function ExerciseCard(props: ExerciseCardProps) {
             onHit={() => props.onHit(setIdx)}
             onMissStart={() => props.onMissStart(setIdx)}
             onMissChange={(value) => props.onMissChange(setIdx, value)}
+            onMissCommit={() => props.onMissCommit(setIdx)}
             onDirectLog={(value) => props.onDirectLog(setIdx, value)}
+            onDirectLogCommit={() => props.onDirectLogCommit(setIdx)}
             onReset={() => props.onReset(setIdx)}
           />
         ))}
@@ -663,7 +777,9 @@ type SetRowProps = {
   onHit: () => void;
   onMissStart: () => void;
   onMissChange: (value: string) => void;
+  onMissCommit: () => void;
   onDirectLog: (value: string) => void;
+  onDirectLogCommit: () => void;
   onReset: () => void;
 };
 
@@ -711,6 +827,8 @@ function SetRow(props: SetRowProps) {
             keyboardType="numeric"
             value={typeof set.reps === 'number' ? String(set.reps) : set.reps}
             onChangeText={props.onDirectLog}
+            onBlur={props.onDirectLogCommit}
+            onSubmitEditing={props.onDirectLogCommit}
           />
         )}
         {set.status === 'hit' && props.isEditingHit && (
@@ -743,6 +861,8 @@ function SetRow(props: SetRowProps) {
               keyboardType="numeric"
               value={typeof set.reps === 'number' ? String(set.reps) : set.reps}
               onChangeText={props.onMissChange}
+              onBlur={props.onMissCommit}
+              onSubmitEditing={props.onMissCommit}
               autoFocus
             />
             <Pressable hitSlop={8} onPress={props.onReset}>
@@ -829,21 +949,22 @@ function SwapModal({
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  splitScroll: {
+  splitPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 16,
   },
-  splitRow: {
-    gap: 8,
-    paddingRight: 8,
+  splitButton: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  splitPill: {
+    justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 11,
     borderRadius: radius.chip,
     borderWidth: 1,
   },
-  splitPillText: {
+  splitButtonText: {
     fontSize: type.metaSemibold.fontSize,
     fontWeight: '600',
   },

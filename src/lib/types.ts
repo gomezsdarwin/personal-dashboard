@@ -42,9 +42,17 @@ export type GymSessionRow = {
 /** One entry in a split's `config` JSONB array. Library entries reference a
  * MUSCLES slot; custom entries carry their own name/weight/muscle inline.
  * `extraOptions` holds user-added alternatives for a library slot that aren't
- * part of the static `MUSCLES` library (see workouts.ts's `getSlotOptions`). */
+ * part of the static `MUSCLES` library (see workouts.ts's `getSlotOptions`).
+ * `removedOptionIds` holds static-library option ids the user explicitly
+ * deleted for this slot, so they don't get re-merged back in on load. */
 export type GymSplitConfigEntry =
-  | { slot: string; id: string; custom?: false; extraOptions?: { id: string; name: string; defaultWeight: number }[] }
+  | {
+      slot: string;
+      id: string;
+      custom?: false;
+      extraOptions?: { id: string; name: string; defaultWeight: number }[];
+      removedOptionIds?: string[];
+    }
   | { slot: string; id: string; name: string; defaultWeight: number; muscle: string; custom: true };
 
 export type GymSplitConfigRow = {
@@ -108,12 +116,30 @@ export type PeptideInventoryRow = {
   dose_mcg: number;
   /** Dosing cadence. `frequency_n` is used when frequency === 'everyN' (e.g. 3
    * for "every 3 days"). `frequency_days` is a comma-separated list of day
-   * abbreviations (e.g. "Mon,Thu") used when frequency === 'weekdays'. */
+   * abbreviations (e.g. "Mon,Thu") used when frequency === 'weekdays'. New rows
+   * are always created with frequency === 'weekdays' — 'daily'/'everyN'/'asNeeded'
+   * are legacy values kept readable for rows created before scheduling was
+   * simplified to specific-days-only. */
   frequency: PeptideFrequency;
   frequency_n: number;
   frequency_days: string;
   /** Free-form per-compound note, e.g. a reminder to bump dosage on a future date. */
   note: string;
+  /** Single per-compound dose amount in mg (fractional, e.g. 0.25/0.5). Source
+   * of truth for inventory subtraction; for 'peptide' rows `dose_mcg` is kept
+   * in sync (`dose_mg * 1000`) so the existing recon math keeps working. */
+  dose_mg: number;
+  /** Real amount remaining, in mg. Total on hand is `vials * vial_mg` for both
+   * kinds — `vial_mg` doubles as "amount per unit (mg)" for supplement rows,
+   * not just peptide vial size. Taking a dose subtracts `dose_mg` from this,
+   * clamped to [0, vials * vial_mg]. */
+  amount_left_mg: number;
+  /** When true, this compound is paused ("on a break") — excluded from
+   * Today's schedule but keeps its inventory, dosage, and day config intact. */
+  on_break: boolean;
+  /** ISO timestamp of the last time a dose of this compound was checked off
+   * as taken. Null means never taken. Not updated on uncheck. */
+  last_taken_at: string | null;
 };
 
 export type HabitRow = {

@@ -60,8 +60,12 @@ export function HeaderBar({ sectionTitle }: Props) {
         <BlurView intensity={glass.blurIntensityHeader} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
         <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fillHeader }]} />
 
-        <View style={[styles.row, sectionTitle ? styles.rowIconsOnly : null]}>
-          {sectionTitle ? null : (
+        <View style={styles.row}>
+          {sectionTitle ? (
+            <Text style={[styles.sectionTitle, { color: palette.text.primary }]} numberOfLines={1}>
+              {sectionTitle}
+            </Text>
+          ) : (
             <View style={styles.identity}>
               <LinearGradient
                 colors={diag.colors}
@@ -125,8 +129,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
-  rowIconsOnly: {
-    justifyContent: 'flex-end',
+  sectionTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   identity: {
     flexDirection: 'row',
