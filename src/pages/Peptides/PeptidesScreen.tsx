@@ -210,7 +210,13 @@ export default function PeptidesScreen() {
   // loaded, make sure every non-paused compound scheduled for today has a
   // fresh (untaken) dose row for today's date, without touching history or
   // duplicating rows that already exist (e.g. inserted by handleScheduleSave
-  // or AddInventoryForm's onAdd). Runs once per calendar date.
+  // or AddInventoryForm's onAdd). It also sweeps away stale untaken rows for
+  // today that no longer belong on the schedule — e.g. a dose row whose
+  // compound was deleted before per-item cleanup existed (orphaned), or a
+  // row left over from an earlier schedule edit whose item is now on_break
+  // or no longer scheduled for today's weekday (mismatched). Only untaken
+  // rows dated today are ever candidates; taken rows (dose history) and rows
+  // from other dates are never touched. Runs once per calendar date.
   useEffect(() => {
     if (inventory.loading || doses.loading) return;
     const today = todayIso();
@@ -233,6 +239,18 @@ export default function PeptidesScreen() {
         scheduled_for: today,
         kind: item.kind,
       });
+    });
+
+    const stale = doses.rows.filter((dose) => {
+      if (dose.scheduled_for !== today || dose.taken) return false;
+      const invItem = inventory.rows.find((item) => item.name === dose.name);
+      if (!invItem) return true; // orphaned — no matching inventory item
+      if (invItem.on_break) return true;
+      return !isScheduledToday(invItem, abbr); // mismatched — schedule moved off today
+    });
+
+    stale.forEach((dose) => {
+      doses.remove(dose.id);
     });
   }, [inventory.loading, doses.loading, inventory.rows, doses.rows]);
 

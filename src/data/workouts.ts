@@ -83,6 +83,28 @@ export function getVisibleSplits(configRows: GymSplitConfigRow[]): Split[] {
   return getAllSplits(configRows).filter((s) => !hiddenIds.has(s.id));
 }
 
+/**
+ * Resolves a split id (e.g. a `gym_sessions.split` value) to its display label,
+ * using the exact resolution order LogTab's picker uses: a `gym_split_config`
+ * row's `label` (rename/override) first, then the merged `getAllSplits` list —
+ * which covers custom splits, whose label lives on their `is_custom` row and
+ * may be shadowed by a newer label-less config row for the same `split_id`
+ * (repo rows list newest-first) — then `fallback`. Never returns a raw id
+ * unless the caller passes one as the fallback.
+ */
+export function getSplitLabel(
+  configRows: GymSplitConfigRow[],
+  splitId: string,
+  fallback = 'Workout'
+): string {
+  const label =
+    configRows.find((c) => c.split_id === splitId)?.label ||
+    getAllSplits(configRows).find((s) => s.id === splitId)?.label;
+  // getAllSplits falls back to `c.split_id` for label-less custom rows — treat
+  // that the same as unresolved so a raw id never leaks through.
+  return label && label !== splitId ? label : fallback;
+}
+
 // ---------------------------------------------------------------------------
 // 3.2 Exercise library
 // ---------------------------------------------------------------------------

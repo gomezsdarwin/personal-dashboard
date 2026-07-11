@@ -16,7 +16,7 @@ import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
 import { dueMeta, fmt } from '../../lib/dueDate';
 import { todayIso, toIsoDate } from '../../lib/week';
-import { SPLITS } from '../../data/workouts';
+import { getSplitLabel } from '../../data/workouts';
 import type { TaskRow } from '../../lib/types';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme, withAlpha } from '../../theme/ThemeContext';
@@ -74,16 +74,13 @@ export default function HomeScreen() {
     const today = todayIso();
 
     const sessionToday = gymSessions.find((s) => s.date === today);
-    // Resolve the split's display name: a gym_split_config `label` override (covers
-    // custom splits and renamed built-ins) wins, then the static SPLITS library, then
-    // a generic "Workout" — never render a raw split id like "custom_split_...".
-    let gymText = 'not yet';
-    if (sessionToday) {
-      const configLabel = gymSplitConfigs.find((c) => c.split_id === sessionToday.split)?.label;
-      const splitLabel =
-        configLabel || SPLITS.find((s) => s.id === sessionToday.split)?.label || 'Workout';
-      gymText = `${splitLabel} logged ✓`;
-    }
+    // Resolve the split's display name via the shared getSplitLabel helper — the
+    // same resolution path LogTab's picker uses (config-row label override, then
+    // the merged built-in + custom split list, then a generic "Workout"), so
+    // custom splits render their real label, never a raw "custom_split_..." id.
+    const gymText = sessionToday
+      ? `${getSplitLabel(gymSplitConfigs, sessionToday.split)} logged ✓`
+      : 'not yet';
 
     const dosesPending = peptideDoses.filter((d) => d.scheduled_for === today && !d.taken).length;
 
