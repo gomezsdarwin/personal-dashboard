@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { GlassCard } from '../../components/GlassCard';
 import { GlassChip } from '../../components/GlassChip';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { useRepo } from '../../hooks/useRepo';
-import { getAllSplits, type Split } from '../../data/workouts';
+import { getAllSplits, MUSCLES, type Split } from '../../data/workouts';
 import type { GymSessionRow, GymSet } from '../../lib/types';
+import { addDaysIso, todayIso, weekStartIso } from '../../lib/week';
 
 /**
  * StatsTab — session history + per-exercise progress chart, per FitnessTab
@@ -18,10 +19,6 @@ import type { GymSessionRow, GymSet } from '../../lib/types';
  * the per-exercise chart covers the same ground. No set-logging state
  * machine here; just derived summaries over `gym_sessions`.
  */
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function daysBetween(fromDate: string, toDate: string): number {
   const d1 = new Date(`${fromDate}T00:00:00`);
@@ -51,7 +48,16 @@ function repsSummary(sets: GymSet[]): string {
 // Per-exercise data derivation (formerly GraphTab, spec §8)
 // ---------------------------------------------------------------------------
 
-type ExercisePoint = { date: string; weight: number; reps: string; split: string };
+type ExercisePoint = {
+  date: string;
+  weight: number;
+  reps: string;
+  split: string;
+  /** Estimated 1-rep max (Epley: weight * (1 + reps/30)) off this session's top set. */
+  estOneRM: number;
+  /** True when this session's estimated 1RM beat every prior session's for this exercise. */
+  isPR: boolean;
+};
 
 const RANGES: { label: string; days: number | null }[] = [
   { label: '1W', days: 7 },
@@ -65,6 +71,13 @@ function firstSetWeight(setsWeight: number | string): number {
   return Number.isFinite(n) ? n : NaN;
 }
 
+/** Epley estimated 1RM: weight * (1 + reps/30). Reps of 0/non-numeric fall back to
+ * just the raw weight (a floor rather than an overestimate). */
+function estimateOneRepMax(weight: number, reps: number): number {
+  const validReps = Number.isFinite(reps) && reps > 0 ? reps : 0;
+  return Math.round(weight * (1 + validReps / 30));
+}
+
 function buildExerciseData(sessions: GymSessionRow[]): Record<string, ExercisePoint[]> {
   const sorted = [...sessions].sort((a, b) => a.date.localeCompare(b.date));
   const result: Record<string, ExercisePoint[]> = {};
@@ -74,7 +87,23 @@ function buildExerciseData(sessions: GymSessionRow[]): Record<string, ExercisePo
       const w = firstSetWeight(ex.sets[0]?.weight);
       if (!Number.isFinite(w) || w <= 0) continue;
       const reps = ex.sets.map((s) => (s.reps === '' || s.reps == null ? '—' : String(s.reps))).join(' / ');
-      const entry: ExercisePoint = { date: session.date, weight: w, reps, split: session.split };
+
+      // Top set = highest-weight set logged this session, used for the est. 1RM
+      // (Feature 2) rather than always the first set like the display weight above.
+      let topWeight = w;
+      let topReps = 0;
+      for (const s of ex.sets) {
+        const sw = Number(s.weight);
+        if (!Number.isFinite(sw) || sw <= 0) continue;
+        if (sw >= topWeight) {
+          const sr = Number(s.reps);
+          topWeight = sw;
+          topReps = Number.isFinite(sr) && sr > 0 ? sr : topReps;
+        }
+      }
+      const estOneRM = estimateOneRepMax(topWeight, topReps);
+
+      const entry: ExercisePoint = { date: session.date, weight: w, reps, split: session.split, estOneRM, isPR: false };
       const list = result[ex.name] ?? (result[ex.name] = []);
       const last = list[list.length - 1];
       if (last && last.date === session.date) {
@@ -84,6 +113,21 @@ function buildExerciseData(sessions: GymSessionRow[]): Record<string, ExercisePo
       }
     }
   }
+
+  // PR pass: mark a session as a PR when its est. 1RM beats every prior session's
+  // for that exercise. Lists are date-ascending, so a running max works. The very
+  // first logged session for an exercise is never marked — there's nothing prior
+  // to "beat" yet, and tagging every first-ever log as a PR would be noise.
+  for (const list of Object.values(result)) {
+    let maxSoFar = -Infinity;
+    list.forEach((point, i) => {
+      if (i > 0 && point.estOneRM > maxSoFar) {
+        point.isPR = true;
+      }
+      if (point.estOneRM > maxSoFar) maxSoFar = point.estOneRM;
+    });
+  }
+
   return result;
 }
 
@@ -147,6 +191,18 @@ export function StatsTab() {
     return points.filter((p) => daysBetween(p.date, today) <= rangeDef.days!);
   }, [activeExercise, exerciseData, rangeDef, today]);
 
+  // Feature 2 — current est. 1RM is the most recent session's, regardless of
+  // the selected chart range (a "current stat", not a range-filtered one).
+  const currentOneRM = useMemo(() => {
+    if (!activeExercise) return null;
+    const points = exerciseData[activeExercise] ?? [];
+    return points.length > 0 ? points[points.length - 1].estOneRM : null;
+  }, [activeExercise, exerciseData]);
+
+  // Feature 3 — total volume (sets x reps x weight) per muscle group, last 4
+  // calendar weeks (Mon-Sun, current week last).
+  const weeklyVolume = useMemo(() => buildWeeklyVolume(sessions, today), [sessions, today]);
+
   function toggle(key: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -174,6 +230,15 @@ export function StatsTab() {
           <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>Last session</Text>
         </GlassChip>
       </View>
+
+      {sessions.length > 0 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Weekly volume by muscle</Text>
+          <GlassCard style={styles.chartCard} contentStyle={styles.chartCardContent}>
+            <VolumeChart weeks={weeklyVolume} />
+          </GlassCard>
+        </View>
+      )}
 
       {exerciseNames.length === 0 ? (
         <View style={styles.emptyWrap}>
@@ -212,7 +277,12 @@ export function StatsTab() {
 
           {activeExercise && (
             <View style={styles.chartSection}>
-              <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]}>{activeExercise}</Text>
+              <View style={styles.chartTitleRow}>
+                <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]}>{activeExercise}</Text>
+                {currentOneRM != null && (
+                  <Text style={[styles.oneRMText, { color: palette.text.tertiary }]}>{`Est. 1RM: ${currentOneRM} lbs`}</Text>
+                )}
+              </View>
 
               <View style={styles.rangeRow}>
                 {RANGES.map((r) => {
@@ -291,15 +361,23 @@ export function StatsTab() {
 
                 {isOpen && (
                   <View style={[styles.sessionBody, { borderTopColor: palette.hairline }]}>
-                    {session.exercises.map((ex, i) => (
-                      <View key={`${ex.id}-${i}`} style={styles.exerciseRow}>
-                        <Text style={[styles.exerciseRowName, { color: palette.text.secondary }]} numberOfLines={1}>
-                          {ex.name}
-                        </Text>
-                        <Text style={[styles.exerciseRowWeight, { color: palette.text.tertiary }]}>{`${ex.sets[0]?.weight ?? '—'} lbs`}</Text>
-                        <Text style={[styles.exerciseRowReps, { color: palette.text.quaternary }]}>{repsSummary(ex.sets)}</Text>
-                      </View>
-                    ))}
+                    {session.exercises.map((ex, i) => {
+                      const isPR = (exerciseData[ex.name] ?? []).some((p) => p.date === session.date && p.isPR);
+                      return (
+                        <View key={`${ex.id}-${i}`} style={styles.exerciseRow}>
+                          <Text style={[styles.exerciseRowName, { color: palette.text.secondary }]} numberOfLines={1}>
+                            {ex.name}
+                          </Text>
+                          {isPR && (
+                            <View style={[styles.prBadgeSmall, { backgroundColor: palette.accentText }]}>
+                              <Text style={styles.prBadgeSmallText}>PR</Text>
+                            </View>
+                          )}
+                          <Text style={[styles.exerciseRowWeight, { color: palette.text.tertiary }]}>{`${ex.sets[0]?.weight ?? '—'} lbs`}</Text>
+                          <Text style={[styles.exerciseRowReps, { color: palette.text.quaternary }]}>{repsSummary(ex.sets)}</Text>
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
               </GlassCard>
@@ -339,17 +417,173 @@ function SessionLog({ data, allSplits }: { data: ExercisePoint[]; allSplits: Spl
             style={[styles.logRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
           >
             <Text style={[styles.logText, { color: palette.text.secondary }]} numberOfLines={1}>
-              {`${fmtDate(entry.date)} · ${splitLabel} · ${entry.weight} lbs · ${entry.reps}`}
+              {`${fmtDate(entry.date)} · ${splitLabel} · ${entry.weight} lbs · ${entry.reps} · ${entry.estOneRM} 1RM`}
             </Text>
-            {bumped && (
-              <View style={[styles.bumpBadge, { backgroundColor: palette.successBg }]}>
-                <Text style={[styles.bumpBadgeText, { color: palette.success }]}>↑</Text>
+            {entry.isPR ? (
+              <View style={[styles.prBadgeSmall, { backgroundColor: palette.accentText }]}>
+                <Text style={styles.prBadgeSmallText}>PR</Text>
               </View>
+            ) : (
+              bumped && (
+                <View style={[styles.bumpBadge, { backgroundColor: palette.successBg }]}>
+                  <Text style={[styles.bumpBadgeText, { color: palette.success }]}>↑</Text>
+                </View>
+              )
             )}
           </View>
         );
       })}
     </GlassCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Weekly volume-by-muscle (Feature 3) — one stacked bar per week (last 4
+// Mon-Sun weeks, oldest to newest), segments colored per muscle group. A
+// stacked bar (rather than a bar-per-muscle grid) was picked because it fits
+// both the "last 4 weeks" trend and the per-muscle breakdown into 4 bars
+// total — reads cleanly at phone-portrait width, unlike a 4-week x 7-muscle
+// grouped grid which would be far too dense.
+// ---------------------------------------------------------------------------
+
+type WeekVolume = { weekStart: string; total: number; byMuscle: Record<string, number> };
+
+/** Fixed, canonical muscle order (matches workouts.ts's MUSCLES) with a
+ * distinct qualitative color per group — kept separate from the semantic
+ * success/danger tokens so stacked segments don't read as "good/bad". */
+const MUSCLE_ORDER = Object.keys(MUSCLES);
+const MUSCLE_COLORS: Record<string, string> = {
+  Chest: '#6a56d4',
+  Shoulders: '#3e8fd0',
+  Triceps: '#35a891',
+  Abs: '#d0a13e',
+  Back: '#d1667b',
+  Biceps: '#8f6fd8',
+  Legs: '#5fae5a',
+};
+
+function buildWeeklyVolume(sessions: GymSessionRow[], today: string): WeekVolume[] {
+  const currentWeekStart = weekStartIso(new Date(`${today}T00:00:00`));
+  const weeks: WeekVolume[] = Array.from({ length: 4 }, (_, i) => {
+    const offset = (3 - i) * 7; // oldest (3 weeks back) first, current week last
+    return { weekStart: addDaysIso(currentWeekStart, -offset), total: 0, byMuscle: {} };
+  });
+
+  for (const session of sessions) {
+    const bucket = weeks.find((w) => session.date >= w.weekStart && session.date < addDaysIso(w.weekStart, 7));
+    if (!bucket) continue; // outside the last-4-weeks window
+    for (const ex of session.exercises) {
+      const w = firstSetWeight(ex.sets[0]?.weight);
+      if (!Number.isFinite(w) || w <= 0) continue; // skip exercises with weight <= 0, per StatsTab convention
+      let exVolume = 0;
+      for (const s of ex.sets) {
+        const sw = Number(s.weight);
+        const sr = Number(s.reps);
+        if (!Number.isFinite(sw) || sw <= 0 || !Number.isFinite(sr) || sr <= 0) continue;
+        exVolume += sw * sr;
+      }
+      if (exVolume <= 0) continue;
+      bucket.total += exVolume;
+      bucket.byMuscle[ex.muscle] = (bucket.byMuscle[ex.muscle] ?? 0) + exVolume;
+    }
+  }
+  return weeks;
+}
+
+const VW = 340;
+const VH = 190;
+const VPAD = { t: 20, r: 12, b: 30, l: 12 };
+
+function VolumeChart({ weeks }: { weeks: WeekVolume[] }) {
+  const { palette } = useTheme();
+  const plotH = VH - VPAD.t - VPAD.b;
+  const plotW = VW - VPAD.l - VPAD.r;
+
+  const maxTotal = Math.max(1, ...weeks.map((w) => w.total));
+  const anyVolume = weeks.some((w) => w.total > 0);
+  const musclesPresent = MUSCLE_ORDER.filter((m) => weeks.some((w) => (w.byMuscle[m] ?? 0) > 0));
+
+  if (!anyVolume) {
+    return (
+      <View style={[styles.chartEmpty, { height: VH }]}>
+        <Text style={[styles.emptyLogText, { color: palette.text.tertiary }]}>No volume logged in the last 4 weeks.</Text>
+      </View>
+    );
+  }
+
+  const groupW = plotW / weeks.length;
+  const barW = Math.min(48, groupW * 0.55);
+
+  return (
+    <View>
+      <View style={{ width: VW, height: VH }}>
+        <Svg width={VW} height={VH}>
+          {weeks.map((w, i) => {
+            const cx = VPAD.l + groupW * (i + 0.5);
+            const barBottom = VPAD.t + plotH;
+            let yCursor = barBottom;
+            return (
+              <React.Fragment key={w.weekStart}>
+                {MUSCLE_ORDER.filter((m) => (w.byMuscle[m] ?? 0) > 0).map((m) => {
+                  const segH = (w.byMuscle[m]! / maxTotal) * plotH;
+                  const y = yCursor - segH;
+                  yCursor = y;
+                  return (
+                    <Rect
+                      key={m}
+                      x={cx - barW / 2}
+                      y={y}
+                      width={barW}
+                      height={Math.max(segH, 0)}
+                      fill={MUSCLE_COLORS[m] ?? palette.accentText}
+                      rx={2}
+                    />
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+        </Svg>
+
+        {/* Total-volume labels above each bar */}
+        {weeks.map((w, i) => {
+          const cx = VPAD.l + groupW * (i + 0.5);
+          const barH = (w.total / maxTotal) * plotH;
+          const topY = VPAD.t + plotH - barH;
+          return (
+            <Text
+              key={`total-${w.weekStart}`}
+              style={[styles.volTotalLabel, { left: cx - groupW / 2, width: groupW, top: Math.max(0, topY - 16), color: palette.text.tertiary }]}
+              numberOfLines={1}
+            >
+              {w.total > 0 ? Math.round(w.total).toLocaleString() : ''}
+            </Text>
+          );
+        })}
+
+        {/* Week labels below each bar ("This wk" for the current/last bucket) */}
+        {weeks.map((w, i) => (
+          <Text
+            key={`label-${w.weekStart}`}
+            style={[styles.volWeekLabel, { left: VPAD.l + groupW * i, width: groupW, color: palette.text.tertiary }]}
+            numberOfLines={1}
+          >
+            {i === weeks.length - 1 ? 'This wk' : fmtDate(w.weekStart)}
+          </Text>
+        ))}
+      </View>
+
+      {musclesPresent.length > 0 && (
+        <View style={styles.volLegendRow}>
+          {musclesPresent.map((m) => (
+            <View key={m} style={styles.volLegendItem}>
+              <View style={[styles.volLegendDot, { backgroundColor: MUSCLE_COLORS[m] ?? palette.accentText }]} />
+              <Text style={[styles.volLegendText, { color: palette.text.tertiary }]}>{m}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -531,6 +765,19 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
           </Text>
         ))}
 
+        {/* PR badges — always shown regardless of the show-dots-always threshold,
+            since a PR is the single most important marker on this chart. */}
+        {points
+          .filter((p) => p.d.isPR)
+          .map((p) => (
+            <View
+              key={`pr-${p.i}`}
+              style={[styles.prBadge, { left: Math.max(0, p.x - 12), top: Math.max(0, p.y - 22), backgroundColor: palette.accentText }]}
+            >
+              <Text style={styles.prBadgeText}>PR</Text>
+            </View>
+          ))}
+
         {/* Tooltip */}
         {active != null && (
           <View
@@ -543,7 +790,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
             ]}
           >
             <Text style={styles.tooltipWeight}>{`${active.d.weight} lbs`}</Text>
-            <Text style={styles.tooltipDate}>{fmtDate(active.d.date)}</Text>
+            <Text style={styles.tooltipDate}>{`${fmtDate(active.d.date)} · ${active.d.estOneRM} 1RM`}</Text>
           </View>
         )}
       </View>
@@ -648,12 +895,21 @@ const styles = StyleSheet.create({
   chartSection: {
     marginBottom: spacing.rowGapLg,
   },
+  chartTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: spacing.rowGapSm,
+  },
   chartTitle: {
     fontSize: 19,
     fontWeight: '700',
     fontStyle: 'italic',
     letterSpacing: -0.3,
-    marginBottom: spacing.rowGapSm,
+  },
+  oneRMText: {
+    fontSize: type.caption.fontSize,
+    fontWeight: '600',
   },
   rangeRow: {
     flexDirection: 'row',
@@ -816,6 +1072,59 @@ const styles = StyleSheet.create({
     fontFamily: undefined,
     minWidth: 60,
     textAlign: 'right',
+  },
+  prBadge: {
+    position: 'absolute',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  prBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  prBadgeSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  prBadgeSmallText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  volTotalLabel: {
+    position: 'absolute',
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  volWeekLabel: {
+    position: 'absolute',
+    bottom: 6,
+    fontSize: 9,
+    textAlign: 'center',
+  },
+  volLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: spacing.rowGapSm,
+    justifyContent: 'center',
+  },
+  volLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  volLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  volLegendText: {
+    fontSize: type.caption.fontSize,
   },
 });
 

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, type ThemeMode } from '../theme/ThemeContext';
 import { artworks } from '../data/artworks';
 import { radius } from '../theme/tokens';
+import { exportAllData } from '../lib/export';
 
 type Props = {
   visible: boolean;
@@ -61,6 +63,19 @@ export function SettingsSheet({ visible, onClose }: Props) {
     displayName,
     setDisplayName,
   } = useTheme();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportAllData();
+    } catch (err) {
+      Alert.alert('Export failed', err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const modeChip = (value: ThemeMode, label: string) => {
     const active = mode === value;
@@ -201,6 +216,24 @@ export function SettingsSheet({ visible, onClose }: Props) {
                   { color: palette.text.primary, borderColor: glass.borderBase, backgroundColor: glass.fill },
                 ]}
               />
+
+              {/* Data export */}
+              <Text style={[styles.sectionLabel, { color: palette.text.secondary }]}>Data</Text>
+              <Pressable
+                onPress={handleExport}
+                disabled={exporting}
+                accessibilityRole="button"
+                accessibilityLabel="Export data"
+                style={[
+                  styles.exportRow,
+                  { borderColor: glass.borderBase, backgroundColor: glass.fill, opacity: exporting ? 0.6 : 1 },
+                ]}
+              >
+                <MaterialCommunityIcons name="tray-arrow-down" size={18} color={palette.text.primary} />
+                <Text style={[styles.exportRowText, { color: palette.text.primary }]}>
+                  {exporting ? 'Exporting…' : 'Export data'}
+                </Text>
+              </Pressable>
             </ScrollView>
           </View>
         </View>
@@ -330,6 +363,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     fontSize: 15,
+  },
+  exportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  exportRowText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
 

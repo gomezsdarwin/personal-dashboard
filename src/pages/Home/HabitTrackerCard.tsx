@@ -4,7 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GlassCard } from '../../components/GlassCard';
 import { useRepo } from '../../hooks/useRepo';
 import type { HabitRow } from '../../lib/types';
-import { toIsoDate, weekDayIsos, weekStartIso } from '../../lib/week';
+import { habitStreaks, todayIso as todayIsoNow, weekDayIsos, weekStartIso } from '../../lib/week';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import { HabitStatsModal } from './HabitStatsModal';
@@ -38,7 +38,7 @@ export function HabitTrackerCard() {
   const [addHabitOpen, setAddHabitOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
 
-  const todayIso = useMemo(() => toIsoDate(new Date()), []);
+  const todayIso = useMemo(() => todayIsoNow(), []);
   const currentWeekStart = useMemo(() => weekStartIso(new Date()), []);
   const weekIsos = useMemo(() => weekDayIsos(currentWeekStart), [currentWeekStart]);
   const todayMondayIndex = useMemo(() => (new Date().getDay() + 6) % 7, []);
@@ -52,6 +52,27 @@ export function HabitTrackerCard() {
     () => new Set(completions.map((c) => completionKeyOf(c.habit_id, c.completed_on))),
     [completions]
   );
+
+  const completedIsosByHabit = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const c of completions) {
+      const existing = map.get(c.habit_id);
+      if (existing) {
+        existing.push(c.completed_on);
+      } else {
+        map.set(c.habit_id, [c.completed_on]);
+      }
+    }
+    return map;
+  }, [completions]);
+
+  const streaksByHabit = useMemo(() => {
+    const map = new Map<string, { current: number; best: number }>();
+    for (const h of sortedHabits) {
+      map.set(h.id, habitStreaks(completedIsosByHabit.get(h.id) ?? [], todayIso));
+    }
+    return map;
+  }, [sortedHabits, completedIsosByHabit, todayIso]);
 
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated };
   const iconBtnBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
@@ -161,20 +182,35 @@ export function HabitTrackerCard() {
             No habits yet — add one below.
           </Text>
         ) : (
-          sortedHabits.map((habit) => (
+          sortedHabits.map((habit) => {
+            const streak = streaksByHabit.get(habit.id);
+            const showStreakBadge = !!streak && streak.current >= 2;
+            return (
             <View key={habit.id} style={[styles.habitRow, { borderTopColor: palette.hairline }]}>
               <Pressable
                 style={styles.nameWrap}
                 onLongPress={() => confirmDeleteHabit(habit)}
                 accessibilityRole="button"
-                accessibilityLabel={`${habit.name}. Long-press to delete.`}
+                accessibilityLabel={
+                  showStreakBadge
+                    ? `${habit.name}, ${streak!.current} day streak. Long-press to delete.`
+                    : `${habit.name}. Long-press to delete.`
+                }
               >
                 <Text
                   style={[styles.habitName, { color: palette.text.primaryAlt }]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
                   {habit.name}
                 </Text>
+                {showStreakBadge ? (
+                  <View style={styles.streakBadge}>
+                    <MaterialCommunityIcons name="fire" size={12} color={palette.warning} />
+                    <Text style={[styles.streakBadgeText, { color: palette.warning }]}>
+                      {streak!.current}d
+                    </Text>
+                  </View>
+                ) : null}
               </Pressable>
 
               <Pressable
@@ -230,7 +266,8 @@ export function HabitTrackerCard() {
                 })}
               </View>
             </View>
-          ))
+            );
+          })
         )}
 
         {addHabitOpen ? (
@@ -352,6 +389,18 @@ const styles = StyleSheet.create({
   habitName: {
     fontSize: typeScale.itemTitleMedium.fontSize,
     fontWeight: typeScale.itemTitleMedium.fontWeight,
+  },
+  // Sits below the (up to 2-line) habit name rather than beside it, so it never
+  // steals width from the wrapping name text or the day cells.
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 2,
+  },
+  streakBadgeText: {
+    fontSize: typeScale.caption.fontSize,
+    fontWeight: typeScale.caption.fontWeight,
   },
   starWrap: {
     width: 22,

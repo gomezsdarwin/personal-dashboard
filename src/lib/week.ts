@@ -14,6 +14,15 @@ export function toIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Today's local-calendar ISO date. Shared replacement for the several
+ * `new Date().toISOString().slice(0, 10)` implementations that used to be
+ * scattered across Gym/Peptides screens — that pattern reads UTC, which
+ * rolls over to tomorrow's date in the evening for negative-UTC-offset
+ * timezones. */
+export function todayIso(): string {
+  return toIsoDate(new Date());
+}
+
 /** Parses a "YYYY-MM-DD" ISO date string into a local-midnight Date. */
 function fromIsoDate(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
@@ -47,4 +56,34 @@ export function addDaysIso(iso: string, days: number): string {
   const d = fromIsoDate(iso);
   d.setDate(d.getDate() + days);
   return toIsoDate(d);
+}
+
+/** Current + longest-ever streak of consecutive completed days for one habit.
+ *
+ * `current` counts back from today; if today isn't completed yet it falls back to
+ * yesterday first, so a not-yet-done today doesn't zero out the streak until the day
+ * is actually over. `best` is the longest consecutive run anywhere in `completedIsos`. */
+export function habitStreaks(
+  completedIsos: readonly string[],
+  todayIso: string
+): { current: number; best: number } {
+  const set = new Set(completedIsos);
+
+  let best = 0;
+  let run = 0;
+  let prev: string | null = null;
+  for (const iso of Array.from(set).sort()) {
+    run = prev !== null && addDaysIso(prev, 1) === iso ? run + 1 : 1;
+    if (run > best) best = run;
+    prev = iso;
+  }
+
+  let current = 0;
+  let cursor = set.has(todayIso) ? todayIso : addDaysIso(todayIso, -1);
+  while (set.has(cursor)) {
+    current += 1;
+    cursor = addDaysIso(cursor, -1);
+  }
+
+  return { current, best };
 }

@@ -7,6 +7,7 @@ import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Palette } from '../../theme/palettes';
 import type { GymSessionRow, GymSet } from '../../lib/types';
+import { todayIso } from '../../lib/week';
 
 /**
  * HistoryModal — bottom-sheet overlay opened from LogTab's "↗ History"
@@ -21,10 +22,6 @@ import type { GymSessionRow, GymSet } from '../../lib/types';
 // Local date helpers (spec §10 — no shared date utility module; each file
 // re-implements these, matching GraphTab.tsx/StatsTab.tsx conventions).
 // ---------------------------------------------------------------------------
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function daysBetween(fromDate: string, toDate: string): number {
   const d1 = new Date(`${fromDate}T00:00:00`);

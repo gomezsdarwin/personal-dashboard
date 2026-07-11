@@ -61,7 +61,12 @@ export function AppShell({ children, contentStyle }: Props) {
 
   return (
     <View style={styles.root}>
-      <ImageBackground source={activeArtwork.source} resizeMode="cover" style={StyleSheet.absoluteFill}>
+      <ImageBackground
+        source={activeArtwork.source}
+        resizeMode="cover"
+        style={styles.artwork}
+        imageStyle={styles.artworkImage}
+      >
         {/* Theme-driven scrim (dark/light-aware) for legibility of glass cards over the
             painting. Active artwork comes from Settings (useTheme().artworkId). */}
         <View
@@ -92,6 +97,17 @@ export function AppShell({ children, contentStyle }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  artwork: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+  },
+  artworkImage: {
+    width: '100%',
+    height: '100%',
   },
   scroller: {
     flex: 1,

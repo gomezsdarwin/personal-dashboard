@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,8 +9,7 @@ import { useTheme, withAlpha } from '../../theme/ThemeContext';
 import { accent } from '../../theme/accent';
 import { useRepo } from '../../hooks/useRepo';
 import type { NewRow, PeptideDoseRow, PeptideFrequency, PeptideInventoryRow, PeptideKind } from '../../lib/types';
-
-const todayIso = (): string => new Date().toISOString().slice(0, 10);
+import { todayIso } from '../../lib/week';
 
 const KIND_LABEL: Record<PeptideKind, string> = { peptide: 'Peptides', supplement: 'Supplements' };
 const KIND_ORDER: PeptideKind[] = ['peptide', 'supplement'];
@@ -33,6 +32,25 @@ function groupByKind<T extends { kind: PeptideKind }>(rows: T[]): KindGroup<T>[]
  * `kind` as 'peptide' (the pre-existing default) so they don't vanish from both groups. */
 function normalizeKind<T extends { kind: PeptideKind }>(rows: T[]): T[] {
   return rows.map((row) => (row.kind ? row : { ...row, kind: 'peptide' }));
+}
+
+/** Today's Monday-first weekday abbreviation, matching DAY_ABBRS's order. */
+function todayAbbr(): string {
+  return DAY_ABBRS[(new Date().getDay() + 6) % 7];
+}
+
+/** Whether an inventory item should have a dose row generated for today's
+ * date — daily cadence (including legacy rows with no `frequency` set, which
+ * default to daily per `frequencyLabel`) always qualifies; `weekdays` cadence
+ * qualifies only when today's abbreviation is in `frequency_days`. `everyN`/
+ * `asNeeded` aren't auto-generated here (not modeled by a day-of-week check). */
+function isScheduledToday(item: PeptideInventoryRow, abbr: string): boolean {
+  const freq = item.frequency || 'daily';
+  if (freq === 'daily') return true;
+  if (freq === 'weekdays') {
+    return (item.frequency_days || '').split(',').filter(Boolean).includes(abbr);
+  }
+  return false;
 }
 
 /** Total amount on hand, in mg — `vials * vial_mg` generalizes across both
@@ -76,7 +94,7 @@ function frequencyLabel(item: PeptideInventoryRow): string {
         ? item.frequency_days
             .split(',')
             .filter(Boolean)
-            .join(', ')
+            .join(' · ')
         : 'Specific days';
     case 'asNeeded':
       return 'As needed';
@@ -84,6 +102,59 @@ function frequencyLabel(item: PeptideInventoryRow): string {
     default:
       return 'Daily';
   }
+}
+
+/** Doses-per-week rate implied by an inventory item's cadence, for projecting
+ * run-out date. `daily` (including legacy rows with no `frequency` set) is 7;
+ * `weekdays` is however many days are checked off in `frequency_days`;
+ * `everyN` is `7 / frequency_n`. Returns null when the cadence isn't
+ * projectable as a weekly rate — `asNeeded` (no fixed schedule) or a
+ * `weekdays` row with no days selected (would imply a stalled projection). */
+function dosesPerWeek(item: PeptideInventoryRow): number | null {
+  const freq = item.frequency || 'daily';
+  if (freq === 'daily') return 7;
+  if (freq === 'weekdays') {
+    const count = (item.frequency_days || '').split(',').filter(Boolean).length;
+    return count > 0 ? count : null;
+  }
+  if (freq === 'everyN') {
+    const n = item.frequency_n || 1;
+    return n > 0 ? 7 / n : null;
+  }
+  return null; // asNeeded — not modeled by a weekly rate
+}
+
+/** Projects remaining doses and run-out date from an inventory item's current
+ * stock, dose size, and cadence. Returns null when there's no usable dose
+ * (`dose_mg` unset/zero), no projectable cadence (see `dosesPerWeek`), or the
+ * item is paused (`on_break`) — none of those have a meaningful projection.
+ * `lowStock` flags items with under a week of supply left, for the warning
+ * chip. Purely derived from existing fields; nothing is persisted. */
+function projectSupply(
+  item: PeptideInventoryRow
+): { dosesLeft: number; runOutDate: Date; lowStock: boolean } | null {
+  if (item.on_break) return null;
+  const doseMg = item.dose_mg || 0;
+  if (doseMg <= 0) return null;
+  const perWeek = dosesPerWeek(item);
+  if (!perWeek) return null;
+
+  const total = amountTotalMg(item);
+  const left = item.amount_left_mg ?? total;
+  const dosesLeft = Math.max(0, Math.floor(left / doseMg));
+  const daysLeft = (dosesLeft / perWeek) * 7;
+
+  const runOutDate = new Date();
+  runOutDate.setHours(0, 0, 0, 0);
+  runOutDate.setDate(runOutDate.getDate() + Math.round(daysLeft));
+
+  return { dosesLeft, runOutDate, lowStock: daysLeft < 7 };
+}
+
+/** Formats a projected run-out date as e.g. "Aug 3", matching the compact
+ * style of the surrounding captions. */
+function formatRunOutDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 /** Relative "time since last dose" label for an inventory item's
@@ -118,9 +189,15 @@ export default function PeptidesScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
 
+  // Guards the daily dose-row generation effect below so it inserts rows for
+  // a given date at most once, even though it re-runs whenever doses/inventory
+  // rows change identity (e.g. after its own inserts, or any toggle/edit).
+  const generatedDoseRowsForRef = useRef<string | null>(null);
+
   const activeDoseRows = useMemo(
     () =>
       doses.rows.filter((dose) => {
+        if (dose.scheduled_for !== todayIso()) return false;
         const invItem = inventory.rows.find((item) => item.name === dose.name);
         return !invItem?.on_break;
       }),
@@ -128,6 +205,36 @@ export default function PeptidesScreen() {
   );
   const doseGroups = useMemo(() => groupByKind(normalizeKind(activeDoseRows)), [activeDoseRows]);
   const inventoryGroups = useMemo(() => groupByKind(normalizeKind(inventory.rows)), [inventory.rows]);
+
+  // Today's Schedule is a daily checklist: once inventory + doses have both
+  // loaded, make sure every non-paused compound scheduled for today has a
+  // fresh (untaken) dose row for today's date, without touching history or
+  // duplicating rows that already exist (e.g. inserted by handleScheduleSave
+  // or AddInventoryForm's onAdd). Runs once per calendar date.
+  useEffect(() => {
+    if (inventory.loading || doses.loading) return;
+    const today = todayIso();
+    if (generatedDoseRowsForRef.current === today) return;
+    generatedDoseRowsForRef.current = today;
+
+    const abbr = todayAbbr();
+    const missing = inventory.rows.filter((item) => {
+      if (item.on_break) return false;
+      if (!isScheduledToday(item, abbr)) return false;
+      return !doses.rows.some((dose) => dose.name === item.name && dose.scheduled_for === today);
+    });
+
+    missing.forEach((item) => {
+      doses.insert({
+        name: item.name,
+        amount: item.schedule_amount,
+        time_label: item.schedule_time_label,
+        taken: false,
+        scheduled_for: today,
+        kind: item.kind,
+      });
+    });
+  }, [inventory.loading, doses.loading, inventory.rows, doses.rows]);
 
   const handleDoseToggle = async (dose: PeptideDoseRow) => {
     const nextTaken = !dose.taken;
@@ -157,13 +264,43 @@ export default function PeptidesScreen() {
     await Promise.all(orphaned.map((dose) => doses.remove(dose.id)));
   };
 
-  const handleScheduleSave = async (item: PeptideInventoryRow, amount: string, timeLabel: string, note: string) => {
+  const handleScheduleSave = async (
+    item: PeptideInventoryRow,
+    amount: string,
+    timeLabel: string,
+    note: string,
+    vialsText: string,
+    doseMgText: string,
+    frequencyDays: string[]
+  ) => {
     const trimmedAmount = amount.trim();
     const trimmedTime = timeLabel.trim();
+
+    // Inventory-editing fields: fall back to the existing value on invalid/blank
+    // input rather than zeroing it out, since this form doubles as "edit schedule".
+    const vialsNum = Number.parseInt(vialsText, 10);
+    const vialsClean = Number.isFinite(vialsNum) && vialsNum >= 0 ? vialsNum : item.vials;
+    const doseMgNum = Number.parseFloat(doseMgText);
+    const doseMgClean = Number.isFinite(doseMgNum) && doseMgNum >= 0 ? doseMgNum : item.dose_mg;
+    const total = vialsClean * item.vial_mg;
+    // Adding vials should grow the remaining amount, not just re-clamp it to
+    // the new total — otherwise topping up inventory in the edit form has no
+    // effect on `amount_left_mg` when it was already sitting below the old total.
+    const currentLeft = item.amount_left_mg ?? total;
+    const vialsDeltaMg = (vialsClean - item.vials) * item.vial_mg;
+    const grownLeft = vialsDeltaMg > 0 ? currentLeft + vialsDeltaMg : currentLeft;
+    const nextLeft = Math.max(0, Math.min(total, grownLeft));
+
     await inventory.update(item.id, {
       schedule_amount: trimmedAmount,
       schedule_time_label: trimmedTime,
       note: note.trim(),
+      vials: vialsClean,
+      dose_mg: doseMgClean,
+      ...(item.kind === 'peptide' ? { dose_mcg: doseMgClean * 1000 } : {}),
+      frequency_days: frequencyDays.join(','),
+      ...(frequencyDays.length > 0 ? { frequency: 'weekdays' as PeptideFrequency } : {}),
+      amount_left_mg: nextLeft,
     });
 
     const today = todayIso();
@@ -271,7 +408,9 @@ export default function PeptidesScreen() {
                   item={item}
                   isEditing={editingId === item.id}
                   onToggleEdit={() => setEditingId((cur) => (cur === item.id ? null : item.id))}
-                  onSaveSchedule={(amount, timeLabel, note) => handleScheduleSave(item, amount, timeLabel, note)}
+                  onSaveSchedule={(amount, timeLabel, note, vials, doseMg, frequencyDays) =>
+                    handleScheduleSave(item, amount, timeLabel, note, vials, doseMg, frequencyDays)
+                  }
                   onRemove={() => handleRemoveInventory(item)}
                   onToggleBreak={() => handleToggleBreak(item)}
                 />
@@ -339,7 +478,14 @@ function InventoryCard({
   item: PeptideInventoryRow;
   isEditing: boolean;
   onToggleEdit: () => void;
-  onSaveSchedule: (amount: string, timeLabel: string, note: string) => void;
+  onSaveSchedule: (
+    amount: string,
+    timeLabel: string,
+    note: string,
+    vials: string,
+    doseMg: string,
+    frequencyDays: string[]
+  ) => void;
   onRemove: () => void;
   onToggleBreak: () => void;
 }) {
@@ -347,14 +493,26 @@ function InventoryCard({
   const [amount, setAmount] = useState(item.schedule_amount);
   const [timeLabel, setTimeLabel] = useState(item.schedule_time_label);
   const [note, setNote] = useState(item.note);
+  const [vialsText, setVialsText] = useState(String(item.vials ?? ''));
+  const [doseMgText, setDoseMgText] = useState(item.dose_mg ? String(item.dose_mg) : '');
+  const [editFrequencyDays, setEditFrequencyDays] = useState<string[]>(
+    item.frequency_days ? item.frequency_days.split(',').filter(Boolean) : []
+  );
 
   useEffect(() => {
     if (isEditing) {
       setAmount(item.schedule_amount);
       setTimeLabel(item.schedule_time_label);
       setNote(item.note);
+      setVialsText(String(item.vials ?? ''));
+      setDoseMgText(item.dose_mg ? String(item.dose_mg) : '');
+      setEditFrequencyDays(item.frequency_days ? item.frequency_days.split(',').filter(Boolean) : []);
     }
-  }, [isEditing, item.schedule_amount, item.schedule_time_label, item.note]);
+  }, [isEditing, item.schedule_amount, item.schedule_time_label, item.note, item.vials, item.dose_mg, item.frequency_days]);
+
+  const toggleEditFrequencyDay = (day: string) => {
+    setEditFrequencyDays((cur) => (cur.includes(day) ? cur.filter((d) => d !== day) : [...cur, day]));
+  };
 
   const total = amountTotalMg(item);
   const left = item.amount_left_mg ?? total;
@@ -363,6 +521,7 @@ function InventoryCard({
     return Math.max(0, Math.min(100, (left / total) * 100));
   }, [left, total]);
   const gradient = accent.horizontal();
+  const supply = useMemo(() => projectSupply(item), [item]);
   const hasSchedule = !!(item.schedule_amount || item.schedule_time_label);
   const onHandLabel = item.kind === 'supplement' ? 'on hand' : 'vials on hand';
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
@@ -396,16 +555,30 @@ function InventoryCard({
       ) : null}
       <View style={[styles.progressTrack, { backgroundColor: palette.track }]}>
         <LinearGradient
-          colors={gradient.colors}
+          colors={supply?.lowStock ? [palette.warning, palette.warning] : gradient.colors}
           start={gradient.start}
           end={gradient.end}
           style={[styles.progressFill, { width: `${pct}%` }]}
         />
       </View>
       <View style={styles.inventoryFooterRow}>
-        <Text style={[styles.inventoryCaption, { color: palette.text.tertiary }]}>
-          {formatMg(left)} mg remaining{total > 0 ? ` of ${formatMg(total)} mg` : ''}
-        </Text>
+        <View style={styles.inventoryCaptionCol}>
+          <Text style={[styles.inventoryCaption, { color: palette.text.tertiary }]}>
+            {formatMg(left)} mg remaining{total > 0 ? ` of ${formatMg(total)} mg` : ''}
+          </Text>
+          {supply ? (
+            <View style={styles.supplyRow}>
+              <Text style={[styles.inventoryCaption, { color: palette.text.quaternary }]}>
+                ~{supply.dosesLeft} dose{supply.dosesLeft === 1 ? '' : 's'} left · runs out ~{formatRunOutDate(supply.runOutDate)}
+              </Text>
+              {supply.lowStock ? (
+                <Text style={[styles.lowStockBadge, { color: palette.warning, backgroundColor: palette.warningBg }]}>
+                  Low stock
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
         <View style={styles.inventoryActions}>
           <Pressable
             onPress={onToggleBreak}
@@ -442,6 +615,24 @@ function InventoryCard({
         <View style={styles.scheduleFormWrap}>
           <View style={styles.scheduleForm}>
             <TextInput
+              style={[styles.input, styles.inputVials, inputStyle]}
+              placeholder={item.kind === 'supplement' ? 'On hand' : 'Vials'}
+              placeholderTextColor={palette.text.faint}
+              value={vialsText}
+              onChangeText={setVialsText}
+              keyboardType="number-pad"
+            />
+            <TextInput
+              style={[styles.input, styles.inputVials, inputStyle]}
+              placeholder="Dose (mg)"
+              placeholderTextColor={palette.text.faint}
+              value={doseMgText}
+              onChangeText={setDoseMgText}
+              keyboardType="decimal-pad"
+            />
+          </View>
+          <View style={styles.scheduleForm}>
+            <TextInput
               style={[styles.input, styles.inputAmount, inputStyle]}
               placeholder="Amount · route"
               placeholderTextColor={palette.text.faint}
@@ -456,6 +647,27 @@ function InventoryCard({
               onChangeText={setTimeLabel}
             />
           </View>
+          <Text style={[styles.frequencySectionLabel, { color: palette.text.tertiary }]}>Days</Text>
+          <View style={styles.dayPillRow}>
+            {DAY_ABBRS.map((day) => {
+              const active = editFrequencyDays.includes(day);
+              return (
+                <Pressable
+                  key={day}
+                  onPress={() => toggleEditFrequencyDay(day)}
+                  style={[
+                    styles.dayPillBtn,
+                    { borderColor: glass.borderElevated },
+                    active && { backgroundColor: withAlpha(palette.accentText, 0.22), borderColor: palette.accentText },
+                  ]}
+                >
+                  <Text style={[styles.dayPillText, { color: active ? palette.accentText : palette.text.tertiary }]}>
+                    {day}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <TextInput
             style={[styles.input, styles.inputNote, inputStyle]}
             placeholder="Note to self — e.g. bump to 300mcg after Aug 1"
@@ -465,7 +677,7 @@ function InventoryCard({
             multiline
           />
           <Pressable
-            onPress={() => onSaveSchedule(amount, timeLabel, note)}
+            onPress={() => onSaveSchedule(amount, timeLabel, note, vialsText, doseMgText, editFrequencyDays)}
             style={[styles.saveBtn, styles.saveBtnFullWidth, { backgroundColor: glass.borderElevated }]}
           >
             <Text style={[styles.saveBtnText, { color: palette.text.primaryAlt }]}>Save</Text>
@@ -899,9 +1111,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
   },
+  inventoryCaptionCol: {
+    flex: 1,
+    gap: 2,
+  },
   inventoryCaption: {
     fontSize: type.caption.fontSize,
     fontWeight: type.caption.fontWeight,
+  },
+  supplyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  lowStockBadge: {
+    fontSize: type.caption.fontSize,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.chip,
+    overflow: 'hidden',
   },
   inventoryActions: {
     flexDirection: 'row',

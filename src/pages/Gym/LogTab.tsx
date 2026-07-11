@@ -21,6 +21,7 @@ import {
   type Split,
 } from '../../data/workouts';
 import type { GymSessionExercise, GymSessionRow, GymSet, GymSplitConfigEntry } from '../../lib/types';
+import { todayIso } from '../../lib/week';
 
 // ---------------------------------------------------------------------------
 // Local state shapes (LogTab-only; not persisted directly — see saveSession)
@@ -46,10 +47,6 @@ type LocalExercise = {
   options: ExerciseOption[];
   sets: [LocalSet, LocalSet, LocalSet];
 };
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function hasRepValue(reps: number | string): boolean {
   if (typeof reps === 'number') return reps > 0;

@@ -11,20 +11,15 @@ import DateTimePicker, { type DateTimePickerEvent } from '@react-native-communit
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppShell } from '../../components/AppShell';
 import { GlassCard } from '../../components/GlassCard';
+import { GlassChip } from '../../components/GlassChip';
 import { HabitTrackerCard } from './HabitTrackerCard';
 import { useRepo } from '../../hooks/useRepo';
 import { dueMeta, fmt } from '../../lib/dueDate';
+import { todayIso, toIsoDate } from '../../lib/week';
+import { SPLITS } from '../../data/workouts';
 import type { TaskRow } from '../../lib/types';
 import { type as typeScale } from '../../theme/tokens';
 import { useTheme, withAlpha } from '../../theme/ThemeContext';
-
-/** Local-calendar ISO date (YYYY-MM-DD) — avoids UTC-shift bugs from toISOString(). */
-function toIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
 /** Sort order: soonest-due first, completed tasks sink to bottom. Mirrors Phone.dc.html's `order`. */
 function taskOrder(t: TaskRow): number {
@@ -33,6 +28,10 @@ function taskOrder(t: TaskRow): number {
 
 export default function HomeScreen() {
   const { rows: tasks, insert, update, remove } = useRepo('tasks');
+  const { rows: gymSessions } = useRepo('gym_sessions');
+  const { rows: gymSplitConfigs } = useRepo('gym_split_config');
+  const { rows: peptideDoses } = useRepo('peptide_doses');
+  const { rows: subscriptions } = useRepo('subscriptions');
   const { palette, glass, mode, todoCollapsed, setTodoCollapsed, displayName } = useTheme();
   const [newTitle, setNewTitle] = useState('');
   const [newDue, setNewDue] = useState<Date | null>(null);
@@ -66,6 +65,36 @@ export default function HomeScreen() {
       }),
     []
   );
+
+  /** Slim cross-tab "Today" summary: gym session logged today, peptide doses still
+   *  pending today, and subscriptions renewing within the next 7 days. Mirrors each
+   *  screen's own "today" logic (Gym: session row dated today; Peptides: doses
+   *  scheduled for today and not yet taken; Finance: dueMeta's urgency window). */
+  const todaySummary = useMemo(() => {
+    const today = todayIso();
+
+    const sessionToday = gymSessions.find((s) => s.date === today);
+    // Resolve the split's display name: a gym_split_config `label` override (covers
+    // custom splits and renamed built-ins) wins, then the static SPLITS library, then
+    // a generic "Workout" — never render a raw split id like "custom_split_...".
+    let gymText = 'not yet';
+    if (sessionToday) {
+      const configLabel = gymSplitConfigs.find((c) => c.split_id === sessionToday.split)?.label;
+      const splitLabel =
+        configLabel || SPLITS.find((s) => s.id === sessionToday.split)?.label || 'Workout';
+      gymText = `${splitLabel} logged ✓`;
+    }
+
+    const dosesPending = peptideDoses.filter((d) => d.scheduled_for === today && !d.taken).length;
+
+    const renewingSoon = subscriptions.filter((s) => {
+      const meta = dueMeta(s.renews_on);
+      return meta.days >= 0 && meta.days <= 7;
+    });
+    const renewingTotal = renewingSoon.reduce((sum, s) => sum + s.amount, 0);
+
+    return { gymText, dosesPending, renewingTotal, hasRenewals: renewingSoon.length > 0 };
+  }, [gymSessions, gymSplitConfigs, peptideDoses, subscriptions]);
 
   const handleAddTask = () => {
     const title = newTitle.trim();
@@ -148,6 +177,16 @@ export default function HomeScreen() {
         <Text style={[styles.greeting, { color: palette.text.secondary }]}>{`${greeting}, ${displayName.trim() || 'there'}!`}</Text>
         <Text style={[styles.dateLine, { color: palette.text.secondary }]}>{dateStr}</Text>
       </View>
+
+      <GlassChip style={styles.todayStrip} contentStyle={styles.todayStripContent}>
+        <Text style={[styles.todayStripText, { color: palette.text.secondary }]} numberOfLines={2}>
+          <Text style={{ color: palette.text.primaryAlt, fontWeight: '600' }}>Gym: </Text>
+          {todaySummary.gymText}
+          {'  ·  '}
+          {todaySummary.dosesPending} dose{todaySummary.dosesPending === 1 ? '' : 's'} pending
+          {todaySummary.hasRenewals ? `  ·  $${todaySummary.renewingTotal.toFixed(0)} renewing this week` : ''}
+        </Text>
+      </GlassChip>
 
       <HabitTrackerCard />
 
@@ -325,6 +364,17 @@ const styles = StyleSheet.create({
   dateLine: {
     fontSize: typeScale.body.fontSize,
     marginTop: 8,
+  },
+  todayStrip: {
+    marginBottom: 14,
+  },
+  todayStripContent: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  todayStripText: {
+    fontSize: typeScale.meta.fontSize,
+    lineHeight: 18,
   },
   card: {
     marginTop: 14,

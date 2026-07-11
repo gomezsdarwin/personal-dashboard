@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { HabitCompletionRow, HabitRow } from '../../lib/types';
-import { addDaysIso, toIsoDate, weekDayIsos, weekStartIso } from '../../lib/week';
+import { addDaysIso, habitStreaks, todayIso as todayIsoNow, weekDayIsos, weekStartIso } from '../../lib/week';
 import { accentPalettes, radius } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -46,7 +46,20 @@ export function HabitStatsModal({ visible, onClose, habits, completions }: Props
     [completions]
   );
 
-  const todayIso = useMemo(() => toIsoDate(new Date()), []);
+  const todayIso = useMemo(() => todayIsoNow(), []);
+
+  const completedIsosByHabit = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const c of completions) {
+      const existing = map.get(c.habit_id);
+      if (existing) {
+        existing.push(c.completed_on);
+      } else {
+        map.set(c.habit_id, [c.completed_on]);
+      }
+    }
+    return map;
+  }, [completions]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -74,14 +87,22 @@ export function HabitStatsModal({ visible, onClose, habits, completions }: Props
               </Text>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {habits.map((h) => (
-                  <View key={h.id} style={styles.habitBlock}>
-                    <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]} numberOfLines={1}>
-                      {h.name}
-                    </Text>
-                    <ContributionGrid habitId={h.id} completionSet={completionSet} todayIso={todayIso} />
-                  </View>
-                ))}
+                {habits.map((h) => {
+                  const streak = habitStreaks(completedIsosByHabit.get(h.id) ?? [], todayIso);
+                  return (
+                    <View key={h.id} style={styles.habitBlock}>
+                      <View style={styles.habitBlockHeader}>
+                        <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]} numberOfLines={1}>
+                          {h.name}
+                        </Text>
+                        <Text style={[styles.streakSummary, { color: palette.text.quaternary }]}>
+                          Current: {streak.current} days · Best: {streak.best} days
+                        </Text>
+                      </View>
+                      <ContributionGrid habitId={h.id} completionSet={completionSet} todayIso={todayIso} />
+                    </View>
+                  );
+                })}
               </ScrollView>
             )}
           </View>
@@ -197,10 +218,17 @@ const styles = StyleSheet.create({
   habitBlock: {
     marginBottom: 28,
   },
+  habitBlockHeader: {
+    marginBottom: 14,
+  },
   chartTitle: {
     fontSize: 17,
     fontWeight: '700',
-    marginBottom: 14,
+    marginBottom: 2,
+  },
+  streakSummary: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   gridWrap: {
     paddingBottom: 24,

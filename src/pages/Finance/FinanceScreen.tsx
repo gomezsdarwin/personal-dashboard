@@ -52,6 +52,11 @@ export default function FinanceScreen() {
 
   const total = useMemo(() => rows.reduce((sum, s) => sum + s.amount, 0), [rows]);
 
+  // `SubscriptionRow` has no cadence field (see src/lib/types.ts) — every row's `amount`
+  // is a monthly figure, same as the "Total monthly" hero above. 12-month projection is
+  // therefore simply the monthly total extrapolated across a year.
+  const projected12mo = total * 12;
+
   const billsTotal = useMemo(
     () => rows.filter((s) => s.category === 'Bills').reduce((sum, s) => sum + s.amount, 0),
     [rows]
@@ -101,6 +106,9 @@ export default function FinanceScreen() {
         <Text style={[styles.heroLabel, { color: palette.text.tertiary }]}>Total monthly</Text>
         <Text style={[styles.heroTotal, { color: palette.text.primaryAlt }]}>{usd0(total)}</Text>
         <Text style={[styles.heroCaption, { color: palette.text.quaternary }]}>{rows.length} active subscriptions</Text>
+        <Text style={[styles.heroProjection, { color: palette.text.tertiary }]}>
+          Projected: {usd0(projected12mo)} over next 12 months
+        </Text>
 
         <View style={[styles.heroBreakdown, { borderTopColor: palette.hairline }]}>
           <View style={styles.heroBreakdownItem}>
@@ -250,6 +258,11 @@ const styles = StyleSheet.create({
   heroCaption: {
     fontSize: 14,
     marginTop: 2,
+  },
+  heroProjection: {
+    fontSize: type.caption.fontSize,
+    fontWeight: type.metaMedium.fontWeight,
+    marginTop: 8,
   },
   heroBreakdown: {
     flexDirection: 'row',

@@ -31,8 +31,9 @@ configured, so it runs immediately with no backend. To persist data to a real Su
 and enable multi-device sync + auth:
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. In the Supabase SQL editor, run the migration in `supabase/migrations/0001_init.sql` (creates
-   all 7 tables with Row Level Security scoped to `auth.uid()`).
+2. Apply the schema in `supabase/migrations/` in order (0001, 0002, ...) — either paste each file
+   into the Supabase SQL editor, or use the CLI workflow below (`npm run db:push`), which is the
+   recommended way going forward so the remote database never drifts from the migrations in git.
 3. Copy `.env.example` to `.env` and fill in your project's URL + anon key (Project Settings →
    API):
    ```bash
@@ -47,6 +48,36 @@ and enable multi-device sync + auth:
 When configured, the app shows a glass sign-in/sign-up screen before the tabs. The anon key is
 public-by-design — real protection comes from Postgres Row Level Security, not secrecy of the key.
 Never commit a real `.env` file (it's gitignored).
+
+### Database sync
+
+Schema changes live as sequential files in `supabase/migrations/` (`0001_init.sql`,
+`0002_gym_rebuild.sql`, ...). To avoid the remote database drifting from what's in git (e.g. someone
+pasting one migration into the SQL editor by hand and forgetting the rest), use the Supabase CLI:
+
+1. **One-time setup**, per machine:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <your-project-ref>
+   ```
+   The project ref is the subdomain of your Supabase URL, e.g. for
+   `https://abcdefghijklmnop.supabase.co` the ref is `abcdefghijklmnop`. `login` opens a browser to
+   create an access token; `link` will prompt for the database password (Project Settings →
+   Database).
+2. **After adding a new migration file**, push it to the linked remote:
+   ```bash
+   npm run db:push
+   ```
+   This runs `supabase db push`, which compares `supabase/migrations/` against the remote's
+   migration history table and applies whatever is missing, in order. Run
+   `npx supabase migration list --linked` first if you want to preview what's missing before
+   pushing.
+
+If migrations were ever applied by hand (SQL editor) instead of via `db push`, the remote's
+migration history can be out of sync even when the tables themselves are correct. In that case run
+`npx supabase migration repair --status applied <version>` for each migration version that's
+already present remotely, before pushing new ones — otherwise the CLI may try to re-run (and
+potentially fail or destructively recreate) tables that already exist.
 
 ## Project structure
 

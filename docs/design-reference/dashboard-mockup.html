@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"/><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">try{
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "outline": "#8b90a0",
+                      "error": "#ffb4ab",
+                      "secondary-fixed-dim": "#00dce5",
+                      "on-background": "#e0e3e5",
+                      "on-primary-fixed": "#001a41",
+                      "tertiary-fixed-dim": "#b9c7e4",
+                      "on-secondary-fixed-variant": "#004f53",
+                      "inverse-surface": "#e0e3e5",
+                      "surface": "#101415",
+                      "secondary": "#e6feff",
+                      "tertiary-container": "#8391ad",
+                      "on-primary-fixed-variant": "#004493",
+                      "outline-variant": "#414754",
+                      "on-error-container": "#ffdad6",
+                      "tertiary-fixed": "#d6e3ff",
+                      "inverse-on-surface": "#2d3133",
+                      "on-secondary-container": "#006c71",
+                      "on-surface": "#e0e3e5",
+                      "surface-tint": "#adc7ff",
+                      "on-primary-container": "#00285b",
+                      "on-tertiary-fixed": "#0d1c32",
+                      "on-secondary": "#003739",
+                      "secondary-fixed": "#63f7ff",
+                      "surface-dim": "#101415",
+                      "on-tertiary": "#233148",
+                      "on-secondary-fixed": "#002021",
+                      "on-surface-variant": "#c1c6d7",
+                      "on-tertiary-fixed-variant": "#39475f",
+                      "surface-bright": "#363a3b",
+                      "on-primary": "#002e68",
+                      "background": "#101415",
+                      "primary": "#adc7ff",
+                      "on-tertiary-container": "#1c2a41",
+                      "surface-variant": "#323537",
+                      "on-error": "#690005",
+                      "secondary-container": "#00f4fe",
+                      "surface-container-lowest": "#0b0f10",
+                      "surface-container-highest": "#323537",
+                      "primary-fixed": "#d8e2ff",
+                      "tertiary": "#b9c7e4",
+                      "primary-fixed-dim": "#adc7ff",
+                      "inverse-primary": "#005bc0",
+                      "primary-container": "#4a8eff",
+                      "surface-container-high": "#272a2c",
+                      "surface-container": "#1d2022",
+                      "surface-container-low": "#191c1e",
+                      "error-container": "#93000a"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "gutter": "16px",
+                      "stack-lg": "32px",
+                      "container-padding": "24px",
+                      "stack-sm": "8px",
+                      "unit": "8px",
+                      "stack-md": "16px"
+              },
+              "fontFamily": {
+                      "body-sm": ["Plus Jakarta Sans"],
+                      "body-md": ["Plus Jakarta Sans"],
+                      "headline-lg-mobile": ["Plus Jakarta Sans"],
+                      "headline-lg": ["Plus Jakarta Sans"],
+                      "label-md": ["Plus Jakarta Sans"],
+                      "headline-xl": ["Plus Jakarta Sans"]
+              },
+              "fontSize": {
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                      "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+              }
+            },
+          },
+        }
+      }catch(_e){}</script>
+<style>
+    .habit-square {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.2s ease;
+    }
+    .habit-square.active {
+        background: #adc7ff;
+        box-shadow: 0 0 10px rgba(173, 199, 255, 0.4);
+        border-color: #adc7ff;
+    }
+</style>
+</head>
+<body class="bg-background text-on-surface h-screen flex flex-col items-center overflow-hidden">
+<!-- Background Layer (Starry Night) -->
+<div class="fixed inset-0 z-0 bg-cover bg-center" style="background-image: url('https://lh3.googleusercontent.com/aida/AP1WRLtZukSVzYDZcEvcF-9cW0irBrrNhHDEx1J3AC5HbqCZ7oUasXb8PCcbGIwr0JCNiKIk0MBI_MdF7dAfAR3du7YTy2BPCg_oBKlHDcaqOD3dhmC39Je4ajYrJqLt7lHwmZeg4_cMTnVLIO90z3due5aaXVV_aDCDvTDtY9RR4U8nM-kDFw1OamKu6-gzgsvPb5tAw7iItZGoXRdv5sjViu9J8eJS5bLDzCoWHcOrPtVTK9vZ2NhXscKjl2Dg')"></div>
+<div class="fixed inset-0 z-1 bg-black/40"></div>
+<!-- Top Navigation Anchor -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-gutter h-16 bg-black/40 backdrop-blur-[80px] border-b border-white/10">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full border border-primary/40 overflow-hidden shadow-lg shadow-black/20">
+<img class="w-full h-full object-cover" data-alt="A portrait of a serene professional male" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnpYLl_I4iEXQtcHFoPk6ekMsjL-cQKfg2dxZYWzf56s1a6IwS2qlWTYg05EeOFfPWC_NqlZZ98JPvEHMTFb0HV7kcY6whU87yRwsPMnmEE2tdH9rJbdysbwr0uhdabJ9hZpmLqiw0P7y0Fojvmqhlp9q6Mg7WquIZlN-egaEnLosByrqtlFB9xYtB0NhrQY0L0DkvfpfrOsmm1ojDUxqm_RYhqbFUZdXpldcCJcIyTxCrofqsEdIcMca6s5mbZrAuq-ruDfSFDcdK"/>
+</div>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold text-white tracking-tight">Darwin</h1>
+</div>
+<button class="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined text-white">notifications</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="relative z-10 w-full max-w-lg mt-16 px-gutter flex-1 flex flex-col pb-24 overflow-hidden">
+<!-- Welcome Header -->
+<section class="mt-6 mb-4 shrink-0">
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-white font-bold drop-shadow-lg">Good morning, Liam</h2>
+</section>
+<!-- 1. Tasks Section -->
+<section class="bg-black/50 backdrop-blur-[60px] border border-white/10 rounded-3xl p-5 mb-4 shrink-0 shadow-2xl">
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-label-md text-label-md text-primary font-bold tracking-widest uppercase">Today's Tasks</h3>
+<button class="hover:scale-110 active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-primary text-[28px]">add_circle</span>
+</button>
+</div>
+<div class="space-y-4">
+<div class="flex items-start gap-3 task-item cursor-pointer group">
+<div class="mt-0.5 w-6 h-6 border-2 border-primary rounded-lg flex items-center justify-center bg-primary/30">
+<span class="material-symbols-outlined text-[16px] text-white font-bold">check</span>
+</div>
+<div class="flex-1 border-b border-white/5 pb-2">
+<span class="font-body-md text-body-md text-white/40 line-through">Deep Work Session (2h)</span>
+</div>
+</div>
+<div class="flex items-start gap-3 task-item cursor-pointer">
+<div class="mt-0.5 w-6 h-6 border-2 border-white/30 rounded-lg bg-white/5"></div>
+<div class="flex-1 border-b border-white/5 pb-2">
+<span class="font-body-md text-body-md text-white font-medium">Client Strategy Review</span>
+</div>
+</div>
+<div class="flex items-start gap-3 task-item cursor-pointer">
+<div class="mt-0.5 w-6 h-6 border-2 border-white/30 rounded-lg bg-white/5"></div>
+<div class="flex-1 pb-2">
+<span class="font-body-md text-body-md text-white font-medium">Update Portfolio Drafts</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 2. Habit Tracker Section -->
+<section class="bg-black/50 backdrop-blur-[60px] border border-white/10 rounded-3xl p-5 flex-1 flex flex-col overflow-hidden min-h-0 shadow-2xl">
+<div class="flex items-center justify-between mb-4 shrink-0">
+<h3 class="font-label-md text-label-md text-primary font-bold tracking-widest uppercase">Habit Tracker</h3>
+<span class="material-symbols-outlined text-[20px] text-primary/80">auto_graph</span>
+</div>
+<!-- Weekly Labels -->
+<div class="flex items-center mb-3 shrink-0">
+<div class="w-24"></div>
+<div class="flex-1 flex justify-around pr-2">
+<span class="font-label-md text-[11px] text-white/60 font-bold">M</span>
+<span class="font-label-md text-[11px] text-white/60 font-bold">T</span>
+<span class="font-label-md text-[11px] text-white/60 font-bold">W</span>
+<span class="font-label-md text-[11px] text-white/60 font-bold">T</span>
+<span class="font-label-md text-[11px] text-white/60 font-bold">F</span>
+<span class="font-label-md text-[11px] text-white/60 font-bold">S</span>
+<span class="font-label-md text-[11px] text-white/60 font-bold">S</span>
+</div>
+</div>
+<!-- Habit Rows -->
+<div class="space-y-6 overflow-y-auto pr-1">
+<!-- Habit 1 -->
+<div class="flex items-center group">
+<div class="w-24 pr-2 flex items-center gap-1">
+<span class="font-body-sm text-body-sm block truncate text-white font-medium">Meditation</span>
+<span class="material-symbols-outlined text-[14px] text-primary shrink-0" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+<div class="flex-1 flex justify-around items-center pr-2">
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+</div>
+</div>
+<!-- Habit 2 -->
+<div class="flex items-center group">
+<div class="w-24 pr-2 flex items-center gap-1">
+<span class="font-body-sm text-body-sm block truncate text-white font-medium">Hydrate 2L</span>
+<span class="material-symbols-outlined text-[14px] text-primary shrink-0" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+<div class="flex-1 flex justify-around items-center pr-2">
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+</div>
+</div>
+<!-- Habit 3 -->
+<div class="flex items-center group">
+<div class="w-24 pr-2">
+<span class="font-body-sm text-body-sm block truncate text-white font-medium">Workout</span>
+</div>
+<div class="flex-1 flex justify-around items-center pr-2">
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+</div>
+</div>
+<!-- Habit 4 -->
+<div class="flex items-center group">
+<div class="w-24 pr-2">
+<span class="font-body-sm text-body-sm block truncate text-white font-medium">No Caffeine</span>
+</div>
+<div class="flex-1 flex justify-around items-center pr-2">
+<div class="habit-square active cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+<div class="habit-square cursor-pointer"></div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Shell -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-black/60 backdrop-blur-[80px] border-t border-white/15 rounded-t-[32px]">
+<a class="flex flex-col items-center justify-center text-primary bg-white/10 rounded-2xl px-5 py-2 active:scale-90 transition-all duration-200" href="#">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="font-label-md text-[10px] font-bold mt-0.5">MAIN</span>
+</a>
+<a class="flex flex-col items-center justify-center text-white/50 hover:text-white/80 transition-colors active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined text-[28px]">fitness_center</span>
+<span class="font-label-md text-[10px] font-bold mt-0.5">FITNESS</span>
+</a>
+<a class="flex flex-col items-center justify-center text-white/50 hover:text-white/80 transition-colors active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined text-[28px]">payments</span>
+<span class="font-label-md text-[10px] font-bold mt-0.5">SPEND</span>
+</a>
+<a class="flex flex-col items-center justify-center text-white/50 hover:text-white/80 transition-colors active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined text-[28px]">pill</span>
+<span class="font-label-md text-[10px] font-bold mt-0.5">SUPPS</span>
+</a>
+</nav>
+<!-- Micro-interactions Script -->
+<script>
+        // Toggle habit squares
+        document.querySelectorAll('.habit-square').forEach(square => {
+            square.addEventListener('click', function(e) {
+                e.stopPropagation();
+                this.classList.toggle('active');
+            });
+        });
+
+        // Simple task completion toggle
+        document.querySelectorAll('.task-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const text = this.querySelector('span:last-child');
+                const box = this.querySelector('div');
+                
+                if (text.classList.contains('line-through')) {
+                    text.classList.remove('line-through', 'text-white/40');
+                    text.classList.add('text-white');
+                    box.classList.remove('bg-primary/30');
+                    box.classList.add('bg-white/5');
+                    box.innerHTML = '';
+                } else {
+                    text.classList.add('line-through', 'text-white/40');
+                    text.classList.remove('text-white');
+                    box.classList.add('bg-primary/30');
+                    box.classList.remove('bg-white/5');
+                    box.innerHTML = '<span class="material-symbols-outlined text-[16px] text-white font-bold">check</span>';
+                }
+            });
+        });
+</script>
+</body></html>

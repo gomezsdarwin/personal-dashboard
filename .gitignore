@@ -34,3 +34,4 @@ metro-*.log
 
 # PWA generated
 dev-dist/
+supabase/.temp/

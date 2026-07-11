@@ -6,7 +6,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "db:push": "supabase db push",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@expo/config-plugins": "~54.0.4",
