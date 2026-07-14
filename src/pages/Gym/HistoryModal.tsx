@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Animated, Modal, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
@@ -253,7 +253,7 @@ export function HistoryModal({
                       delta == null ? 'first' : delta === 0 ? '+0' : `${delta > 0 ? '+' : ''}${delta}`;
                     const changeColor = delta == null ? palette.text.tertiary : delta > 0 ? palette.success : delta < 0 ? palette.danger : palette.text.tertiary;
                     return (
-                      <SwipeableHistoryRow
+                      <HistoryRow
                         key={`${entry.date}-${i}`}
                         bordered={i > 0}
                         palette={palette}
@@ -276,7 +276,7 @@ export function HistoryModal({
                         <Text style={[styles.tableCellText, styles.tableColChange, { color: changeColor }]}>
                           {changeLabel}
                         </Text>
-                      </SwipeableHistoryRow>
+                      </HistoryRow>
                     );
                   })}
                 </View>
@@ -309,14 +309,16 @@ function StatTile({
 }
 
 // ---------------------------------------------------------------------------
-// SwipeableHistoryRow — swipe-left-to-reveal-delete on a session table row.
-// Built on the built-in PanResponder (no new gesture-handler dependency in
-// this project) rather than react-native-gesture-handler.
+// HistoryRow — session table row with an always-visible per-row delete
+// affordance. Deleting a bad session is a lightweight two-tap flow (tap the
+// trash icon to arm it — it swaps to a "Delete?" confirm label — tap again to
+// actually remove) rather than a browser confirm() dialog, which this
+// project's tooling forbids on web. Mirrors the tap-then-"tap again to
+// remove" confirm pattern already used for split deletion in LogTab.tsx's
+// SplitPicker.
 // ---------------------------------------------------------------------------
 
-const DELETE_WIDTH = 72;
-
-function SwipeableHistoryRow({
+function HistoryRow({
   bordered,
   palette,
   onDelete,
@@ -327,52 +329,35 @@ function SwipeableHistoryRow({
   onDelete: () => void;
   children: React.ReactNode;
 }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const openOffset = useRef(0);
-  const deleteTranslateX = useRef(Animated.add(translateX, DELETE_WIDTH)).current;
+  const [confirming, setConfirming] = useState(false);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-      onPanResponderMove: (_, gesture) => {
-        const next = Math.min(0, Math.max(-DELETE_WIDTH, openOffset.current + gesture.dx));
-        translateX.setValue(next);
-      },
-      onPanResponderRelease: (_, gesture) => {
-        const next = Math.min(0, Math.max(-DELETE_WIDTH, openOffset.current + gesture.dx));
-        openOffset.current = next < -DELETE_WIDTH / 2 ? -DELETE_WIDTH : 0;
-        Animated.spring(translateX, { toValue: openOffset.current, useNativeDriver: true, bounciness: 0 }).start();
-      },
-    })
-  ).current;
-
-  function handleDelete() {
-    openOffset.current = 0;
-    Animated.spring(translateX, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
-    onDelete();
+  function handlePress() {
+    if (confirming) {
+      setConfirming(false);
+      onDelete();
+    } else {
+      setConfirming(true);
+    }
   }
 
   return (
-    <View style={styles.swipeWrap}>
-      <Animated.View
-        style={[styles.deleteAction, { backgroundColor: palette.danger, transform: [{ translateX: deleteTranslateX }] }]}
-      >
-        <Pressable style={styles.deleteActionPressable} onPress={handleDelete}>
-          <MaterialCommunityIcons name="trash-can-outline" size={18} color="#ffffff" />
-        </Pressable>
-      </Animated.View>
-      <Animated.View
-        style={[
-          styles.tableRow,
-          { backgroundColor: 'rgba(120,110,150,0.05)' },
-          bordered && { borderTopWidth: 1, borderTopColor: palette.hairline },
-          { transform: [{ translateX }] },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        {children}
-      </Animated.View>
+    <View
+      style={[
+        styles.tableRow,
+        { backgroundColor: 'rgba(120,110,150,0.05)' },
+        bordered && { borderTopWidth: 1, borderTopColor: palette.hairline },
+      ]}
+    >
+      {children}
+      <Pressable hitSlop={8} style={styles.rowDeleteBtn} onPress={handlePress}>
+        {confirming ? (
+          <Text style={[styles.rowDeleteConfirmText, { color: palette.danger }]} numberOfLines={1}>
+            Delete?
+          </Text>
+        ) : (
+          <MaterialCommunityIcons name="trash-can-outline" size={15} color={palette.text.tertiary} />
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -824,20 +809,16 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: 12,
   },
-  swipeWrap: {
-    overflow: 'hidden',
-  },
-  deleteAction: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
-    width: DELETE_WIDTH,
-  },
-  deleteActionPressable: {
-    flex: 1,
+  rowDeleteBtn: {
+    minWidth: 22,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 4,
+  },
+  rowDeleteConfirmText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   tableCellText: {
     fontSize: 12,

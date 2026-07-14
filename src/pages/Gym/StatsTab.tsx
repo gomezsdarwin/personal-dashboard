@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import { GlassCard } from '../../components/GlassCard';
-import { GlassChip } from '../../components/GlassChip';
 import { radius, spacing, type } from '../../theme/tokens';
 import { useTheme } from '../../theme/ThemeContext';
+import type { Palette } from '../../theme/palettes';
 import { useRepo } from '../../hooks/useRepo';
-import { getAllSplits, MUSCLES, type Split } from '../../data/workouts';
+import { getAllSplits, MUSCLES } from '../../data/workouts';
 import type { GymSessionRow, GymSet } from '../../lib/types';
 import { addDaysIso, todayIso, weekStartIso } from '../../lib/week';
 
@@ -38,6 +40,16 @@ function relativeDate(dateStr: string, today: string): string {
   if (days < 7) return `${days}d ago`;
   if (days < 30) return `${Math.round(days / 7)}w ago`;
   return `${Math.round(days / 30)}mo ago`;
+}
+
+/** Resolves a session's split id to a display label. Falls back to a generic
+ * "Custom split" for a since-deleted custom split (id starts with
+ * `custom_split_`) rather than surfacing the raw id, and to the raw id
+ * otherwise (e.g. a built-in split that no longer exists). */
+function resolveSplitLabel(splitId: string, allSplits: { id: string; label: string }[]): string {
+  const found = allSplits.find((s) => s.id === splitId)?.label;
+  if (found) return found;
+  return splitId.startsWith('custom_split_') ? 'Custom split' : splitId;
 }
 
 function repsSummary(sets: GymSet[]): string {
@@ -153,7 +165,7 @@ function buildHighlights(exerciseData: Record<string, ExercisePoint[]>, today: s
 
 export function StatsTab() {
   const { palette } = useTheme();
-  const { rows: sessions } = useRepo('gym_sessions');
+  const { rows: sessions, remove: removeSession } = useRepo('gym_sessions');
   const { rows: configRows } = useRepo('gym_split_config');
   // Unfiltered (includes hidden/deleted-built-in splits) so historical
   // session labels keep resolving even after a split is removed from the
@@ -214,21 +226,19 @@ export function StatsTab() {
 
   return (
     <View>
-      <View style={styles.summaryRow}>
-        <GlassChip style={styles.summaryChip} contentStyle={styles.summaryChipContent}>
-          <Text style={[styles.summaryValue, { color: palette.text.primaryAlt }]}>{totalSessions}</Text>
-          <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>Sessions</Text>
-        </GlassChip>
-        <GlassChip style={styles.summaryChip} contentStyle={styles.summaryChipContent}>
-          <Text style={[styles.summaryValue, { color: palette.text.primaryAlt }]}>{sessionsThisMonth}</Text>
-          <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>This month</Text>
-        </GlassChip>
-        <GlassChip style={styles.summaryChip} contentStyle={styles.summaryChipContent}>
-          <Text style={[styles.summaryValue, { color: palette.text.primaryAlt }]}>
-            {daysSinceLast == null ? '—' : daysSinceLast === 0 ? 'Today' : `${daysSinceLast}d`}
-          </Text>
-          <Text style={[styles.summaryLabel, { color: palette.text.tertiary }]}>Last session</Text>
-        </GlassChip>
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Overview</Text>
+        <GlassCard contentStyle={styles.overviewCardContent}>
+          <View style={styles.summaryRow}>
+            <StatTile label="SESSIONS" value={String(totalSessions)} palette={palette} />
+            <StatTile label="THIS MONTH" value={String(sessionsThisMonth)} palette={palette} />
+            <StatTile
+              label="LAST SESSION"
+              value={daysSinceLast == null ? '—' : daysSinceLast === 0 ? 'Today' : `${daysSinceLast}d`}
+              palette={palette}
+            />
+          </View>
+        </GlassCard>
       </View>
 
       {sessions.length > 0 && (
@@ -245,94 +255,78 @@ export function StatsTab() {
           <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>No exercise history yet — log a session to see progress graphs.</Text>
         </View>
       ) : (
-        <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.selectorScroll}
-            contentContainerStyle={styles.selectorRow}
-          >
-            {exerciseNames.map((name) => {
-              const active = name === activeExercise;
-              return (
-                <Pressable
-                  key={name}
-                  style={[
-                    styles.selectorPill,
-                    { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
-                    active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
-                  ]}
-                  onPress={() => setSelected(name)}
-                >
-                  <Text
-                    style={[styles.selectorPillText, { color: active ? '#ffffff' : palette.text.secondary }]}
-                    numberOfLines={1}
-                  >
-                    {name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Exercise progress</Text>
+
+          <ExerciseDropdown names={exerciseNames} selected={activeExercise} onSelect={setSelected} />
 
           {activeExercise && (
             <View style={styles.chartSection}>
-              <View style={styles.chartTitleRow}>
-                <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]}>{activeExercise}</Text>
-                {currentOneRM != null && (
-                  <Text style={[styles.oneRMText, { color: palette.text.tertiary }]}>{`Est. 1RM: ${currentOneRM} lbs`}</Text>
-                )}
-              </View>
-
-              <View style={styles.rangeRow}>
-                {RANGES.map((r) => {
-                  const active = r.label === range;
-                  return (
-                    <Pressable
-                      key={r.label}
-                      style={[
-                        styles.rangePill,
-                        { backgroundColor: 'rgba(255,255,255,0.22)', borderColor: 'rgba(255,255,255,0.4)' },
-                        active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
-                      ]}
-                      onPress={() => setRange(r.label)}
-                    >
-                      <Text style={[styles.rangePillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{r.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
               <GlassCard style={styles.chartCard} contentStyle={styles.chartCardContent}>
+                <View style={styles.chartTitleRow}>
+                  <Text style={[styles.chartTitle, { color: palette.text.primaryAlt }]} numberOfLines={1}>
+                    {activeExercise}
+                  </Text>
+                  {currentOneRM != null && (
+                    <View style={[styles.oneRMPill, { backgroundColor: 'rgba(120,110,150,0.10)' }]}>
+                      <Text style={[styles.oneRMText, { color: palette.text.secondary }]}>{`Est. 1RM ${currentOneRM} lbs`}</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.rangeRow}>
+                  {RANGES.map((r) => {
+                    const active = r.label === range;
+                    return (
+                      <Pressable
+                        key={r.label}
+                        style={[
+                          styles.rangePill,
+                          { backgroundColor: 'rgba(120,110,150,0.10)', borderColor: 'rgba(120,110,150,0.16)' },
+                          active && { backgroundColor: palette.accentText, borderColor: palette.accentText },
+                        ]}
+                        onPress={() => setRange(r.label)}
+                      >
+                        <Text style={[styles.rangePillText, { color: active ? '#ffffff' : palette.text.secondary }]}>{r.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
                 <LineChart data={chartData} />
               </GlassCard>
 
               {highlights.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: palette.text.tertiary }]}>Notable increases — last 30 days</Text>
-                  {highlights.map((h) => (
-                    <View
-                      key={h.name}
-                      style={[styles.highlightRow, { backgroundColor: palette.successBg, borderColor: palette.successBorder }]}
-                    >
-                      <View style={styles.highlightInfo}>
-                        <Text style={[styles.highlightName, { color: palette.text.primaryAlt }]} numberOfLines={1}>
-                          {h.name}
-                        </Text>
-                        <Text style={[styles.highlightRange, { color: palette.text.secondary }]}>{`${h.from} → ${h.to} lbs`}</Text>
+                <View style={styles.subSection}>
+                  <Text style={[styles.subSectionTitle, { color: palette.text.tertiary }]}>Notable increases — last 30 days</Text>
+                  <GlassCard contentStyle={styles.highlightCardContent}>
+                    {highlights.map((h, i) => (
+                      <View
+                        key={h.name}
+                        style={[styles.highlightRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
+                      >
+                        <View style={styles.highlightInfo}>
+                          <Text style={[styles.highlightName, { color: palette.text.primaryAlt }]} numberOfLines={1}>
+                            {h.name}
+                          </Text>
+                          <Text style={[styles.highlightRange, { color: palette.text.tertiary }]}>{`${h.from} → ${h.to} lbs`}</Text>
+                        </View>
+                        <View style={[styles.highlightBadge, { backgroundColor: palette.successBg }]}>
+                          <Text style={[styles.highlightBadgeText, { color: palette.success }]}>{`+${h.delta} lbs`}</Text>
+                        </View>
                       </View>
-                      <View style={[styles.highlightBadge, { backgroundColor: palette.success }]}>
-                        <Text style={styles.highlightBadgeText}>{`+${h.delta} lbs`}</Text>
-                      </View>
-                    </View>
-                  ))}
+                    ))}
+                  </GlassCard>
                 </View>
               )}
 
-              <SessionLog data={chartData} allSplits={allSplits} />
+              <View style={styles.subSection}>
+                <Text style={[styles.subSectionTitle, { color: palette.text.tertiary }]}>Session log</Text>
+                <SessionLog data={chartData} />
+              </View>
             </View>
           )}
-        </>
+        </View>
       )}
 
       <View style={styles.section}>
@@ -345,26 +339,38 @@ export function StatsTab() {
           sortedNewestFirst.map((session) => {
             const key = `${session.date}-${session.split}`;
             const isOpen = expanded.has(key);
-            const splitLabel = allSplits.find((s) => s.id === session.split)?.label ?? session.split;
+            const splitLabel = resolveSplitLabel(session.split, allSplits);
             return (
               <GlassCard key={key} style={styles.sessionCard}>
-                <Pressable onPress={() => toggle(key)} style={styles.sessionHeader}>
-                  <View style={styles.sessionHeaderLeft}>
-                    <Text style={[styles.sessionSplit, { color: palette.text.primaryAlt }]}>{splitLabel}</Text>
-                    <Text style={[styles.sessionMeta, { color: palette.text.tertiary }]}>{`${session.exercises.length} exercises`}</Text>
-                  </View>
-                  <View style={styles.sessionHeaderRight}>
-                    <Text style={[styles.sessionDate, { color: palette.text.secondary }]}>{relativeDate(session.date, today)}</Text>
-                    <Text style={[styles.sessionChevron, { color: palette.text.tertiary }]}>{isOpen ? '▾' : '▸'}</Text>
-                  </View>
-                </Pressable>
+                <View style={styles.sessionHeaderOuter}>
+                  <Pressable onPress={() => toggle(key)} style={styles.sessionHeader}>
+                    <View style={styles.sessionHeaderLeft}>
+                      <Text style={[styles.sessionSplit, { color: palette.text.primaryAlt }]} numberOfLines={1}>
+                        {splitLabel}
+                      </Text>
+                      <Text style={[styles.sessionMeta, { color: palette.text.tertiary }]}>{`${session.exercises.length} exercises`}</Text>
+                    </View>
+                    <View style={styles.sessionHeaderRight}>
+                      <Text style={[styles.sessionDate, { color: palette.text.secondary }]}>{relativeDate(session.date, today)}</Text>
+                      <MaterialCommunityIcons
+                        name={isOpen ? 'chevron-up' : 'chevron-down'}
+                        size={16}
+                        color={palette.text.tertiary}
+                      />
+                    </View>
+                  </Pressable>
+                  <SessionDeleteButton palette={palette} onDelete={() => removeSession(session.id)} />
+                </View>
 
                 {isOpen && (
                   <View style={[styles.sessionBody, { borderTopColor: palette.hairline }]}>
                     {session.exercises.map((ex, i) => {
                       const isPR = (exerciseData[ex.name] ?? []).some((p) => p.date === session.date && p.isPR);
                       return (
-                        <View key={`${ex.id}-${i}`} style={styles.exerciseRow}>
+                        <View
+                          key={`${ex.id}-${i}`}
+                          style={[styles.exerciseRow, { backgroundColor: 'rgba(120,110,150,0.05)' }]}
+                        >
                           <Text style={[styles.exerciseRowName, { color: palette.text.secondary }]} numberOfLines={1}>
                             {ex.name}
                           </Text>
@@ -390,10 +396,131 @@ export function StatsTab() {
 }
 
 // ---------------------------------------------------------------------------
+// StatTile — small labeled stat, per HistoryModal's overview tile pattern.
+// ---------------------------------------------------------------------------
+
+function StatTile({ label, value, palette }: { label: string; value: string; palette: Palette }) {
+  return (
+    <View style={[styles.statTile, { backgroundColor: 'rgba(120,110,150,0.08)' }]}>
+      <Text style={[styles.statTileLabel, { color: palette.text.tertiary }]}>{label}</Text>
+      <Text style={[styles.statTileValue, { color: palette.text.primaryAlt }]}>{value}</Text>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SessionDeleteButton — inline two-tap confirm for deleting a whole session
+// from the history list (tap the trash icon to arm it — swaps to a red
+// "Delete?" label — tap again to actually remove). No window.confirm/
+// Alert.alert per this project's tooling; mirrors HistoryModal.tsx's
+// HistoryRow delete affordance.
+// ---------------------------------------------------------------------------
+
+function SessionDeleteButton({ palette, onDelete }: { palette: Palette; onDelete: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+
+  function handlePress() {
+    if (confirming) {
+      setConfirming(false);
+      onDelete();
+    } else {
+      setConfirming(true);
+    }
+  }
+
+  return (
+    <Pressable hitSlop={8} style={styles.sessionDeleteBtn} onPress={handlePress}>
+      {confirming ? (
+        <Text style={[styles.sessionDeleteConfirmText, { color: palette.danger }]} numberOfLines={1}>
+          Delete?
+        </Text>
+      ) : (
+        <MaterialCommunityIcons name="trash-can-outline" size={15} color={palette.text.tertiary} />
+      )}
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ExerciseDropdown — button that opens a modal list, replacing the old
+// horizontal pill carousel. Mirrors LogTab's SplitPicker / HistoryModal's
+// bottom-sheet pattern (Modal + translucent scrim + BlurView sheet) rather
+// than a native <select> or Picker, per the web-first-on-iPhone constraint.
+// ---------------------------------------------------------------------------
+
+function ExerciseDropdown({
+  names,
+  selected,
+  onSelect,
+}: {
+  names: string[];
+  selected: string | null;
+  onSelect: (name: string) => void;
+}) {
+  const { palette, glass } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <View>
+      <View style={styles.dropdownButtonShadow}>
+        <View style={[styles.dropdownButtonClip, { borderColor: glass.borderBase }]}>
+          <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+          <Pressable style={styles.dropdownButton} onPress={() => setOpen(true)}>
+            <Text style={[styles.dropdownButtonText, { color: palette.text.primaryAlt }]} numberOfLines={1}>
+              {selected ?? 'Choose an exercise'}
+            </Text>
+            <MaterialCommunityIcons name="chevron-down" size={18} color={palette.text.tertiary} />
+          </Pressable>
+        </View>
+      </View>
+
+      {open && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+          <Pressable style={styles.dropdownScrim} onPress={() => setOpen(false)}>
+            <Pressable style={styles.dropdownSheetWrap} onPress={(e) => e.stopPropagation()}>
+              <BlurView intensity={glass.blurIntensity} tint={glass.blurTint} style={StyleSheet.absoluteFill} />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: glass.fill }]} />
+              <View style={styles.dropdownSheet}>
+                <View style={[styles.dropdownHandle, { backgroundColor: palette.track }]} />
+                <Text style={[styles.dropdownTitle, { color: palette.text.primary }]}>Choose an exercise</Text>
+                <ScrollView style={styles.dropdownList} showsVerticalScrollIndicator={false}>
+                  {names.map((name) => {
+                    const active = name === selected;
+                    return (
+                      <Pressable
+                        key={name}
+                        style={[styles.dropdownRow, active && { backgroundColor: palette.successBg }]}
+                        onPress={() => {
+                          onSelect(name);
+                          setOpen(false);
+                        }}
+                      >
+                        <Text
+                          style={[styles.dropdownRowText, { color: active ? palette.success : palette.text.primary }]}
+                          numberOfLines={1}
+                        >
+                          {name}
+                        </Text>
+                        {active && <MaterialCommunityIcons name="check" size={16} color={palette.success} />}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Session log (spec §8, chart-section bottom)
 // ---------------------------------------------------------------------------
 
-function SessionLog({ data, allSplits }: { data: ExercisePoint[]; allSplits: Split[] }) {
+function SessionLog({ data }: { data: ExercisePoint[] }) {
   const { palette } = useTheme();
   const reversed = [...data].reverse();
   if (reversed.length === 0) {
@@ -403,36 +530,60 @@ function SessionLog({ data, allSplits }: { data: ExercisePoint[]; allSplits: Spl
       </GlassCard>
     );
   }
+  const bestWeight = Math.max(...data.map((d) => d.weight));
   return (
     <GlassCard contentStyle={styles.logCardContent}>
-      {reversed.map((entry, i) => {
-        // "immediately-preceding" in the filtered range means chronologically
-        // before this one — i.e. the next entry in the reverse-chronological list.
-        const prev = reversed[i + 1];
-        const bumped = prev != null && entry.weight > prev.weight;
-        const splitLabel = allSplits.find((s) => s.id === entry.split)?.label ?? entry.split;
-        return (
-          <View
-            key={`${entry.date}-${i}`}
-            style={[styles.logRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
-          >
-            <Text style={[styles.logText, { color: palette.text.secondary }]} numberOfLines={1}>
-              {`${fmtDate(entry.date)} · ${splitLabel} · ${entry.weight} lbs · ${entry.reps} · ${entry.estOneRM} 1RM`}
-            </Text>
-            {entry.isPR ? (
-              <View style={[styles.prBadgeSmall, { backgroundColor: palette.accentText }]}>
-                <Text style={styles.prBadgeSmallText}>PR</Text>
+      <View style={styles.table}>
+        <View style={[styles.tableHeaderRow, { backgroundColor: 'rgba(120,110,150,0.08)' }]}>
+          <Text style={[styles.tableHeaderText, styles.logColDate, { color: palette.text.tertiary }]}>DATE</Text>
+          <Text style={[styles.tableHeaderText, styles.logColReps, { color: palette.text.tertiary }]}>REPS</Text>
+          <Text style={[styles.tableHeaderText, styles.logColWeight, { color: palette.text.tertiary }]}>WEIGHT</Text>
+          <Text style={[styles.tableHeaderText, styles.logColOneRM, { color: palette.text.tertiary }]}>1RM</Text>
+        </View>
+        {reversed.map((entry, i) => {
+          // "immediately-preceding" in the filtered range means chronologically
+          // before this one — i.e. the next entry in the reverse-chronological list.
+          const prev = reversed[i + 1];
+          const bumped = prev != null && entry.weight > prev.weight;
+          const isBest = entry.weight === bestWeight;
+          return (
+            <View
+              key={`${entry.date}-${i}`}
+              style={[styles.logRow, i > 0 && { borderTopWidth: 1, borderTopColor: palette.hairline }]}
+            >
+              <Text style={[styles.tableCellText, styles.logColDate, { color: palette.text.secondary }]} numberOfLines={1}>
+                {fmtDate(entry.date)}
+              </Text>
+              <Text style={[styles.tableCellText, styles.logColReps, { color: palette.text.tertiary }]} numberOfLines={1}>
+                {entry.reps}
+              </Text>
+              <View style={[styles.logColWeight, styles.logWeightCell]}>
+                <Text
+                  style={[
+                    styles.tableCellText,
+                    { color: isBest ? palette.warning : palette.text.secondary },
+                    isBest && styles.tableCellBest,
+                  ]}
+                >
+                  {isBest ? `★ ${entry.weight}` : entry.weight}
+                </Text>
+                {entry.isPR ? (
+                  <View style={[styles.prBadgeSmall, { backgroundColor: palette.accentText }]}>
+                    <Text style={styles.prBadgeSmallText}>PR</Text>
+                  </View>
+                ) : (
+                  bumped && (
+                    <View style={[styles.bumpBadge, { backgroundColor: palette.successBg }]}>
+                      <Text style={[styles.bumpBadgeText, { color: palette.success }]}>↑</Text>
+                    </View>
+                  )
+                )}
               </View>
-            ) : (
-              bumped && (
-                <View style={[styles.bumpBadge, { backgroundColor: palette.successBg }]}>
-                  <Text style={[styles.bumpBadgeText, { color: palette.success }]}>↑</Text>
-                </View>
-              )
-            )}
-          </View>
-        );
-      })}
+              <Text style={[styles.tableCellText, styles.logColOneRM, { color: palette.text.tertiary }]}>{entry.estOneRM}</Text>
+            </View>
+          );
+        })}
+      </View>
     </GlassCard>
   );
 }
@@ -516,7 +667,7 @@ function VolumeChart({ weeks }: { weeks: WeekVolume[] }) {
 
   return (
     <View>
-      <View style={{ width: VW, height: VH }}>
+      <View style={{ width: VW, height: VH, alignSelf: 'center' }}>
         <Svg width={VW} height={VH}>
           {weeks.map((w, i) => {
             const cx = VPAD.l + groupW * (i + 0.5);
@@ -683,7 +834,7 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
         </View>
       )}
 
-      <View style={{ width: CW, height: CH }}>
+      <View style={{ width: CW, height: CH, alignSelf: 'center' }}>
         <Svg width={CW} height={CH}>
           <Defs>
             <LinearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
@@ -803,25 +954,30 @@ function LineChart({ data }: { data: ExercisePoint[] }) {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  overviewCardContent: {
+    padding: 0,
+  },
   summaryRow: {
     flexDirection: 'row',
-    gap: spacing.rowGapSm,
-    marginBottom: spacing.rowGapLg,
+    gap: 8,
+    padding: spacing.cardPaddingSm,
   },
-  summaryChip: {
+  statTile: {
     flex: 1,
-  },
-  summaryChipContent: {
+    paddingVertical: 12,
+    borderRadius: radius.input,
     alignItems: 'center',
-    paddingVertical: 14,
   },
-  summaryValue: {
-    fontSize: 20,
+  statTileLabel: {
+    fontSize: 9,
     fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  summaryLabel: {
-    fontSize: type.caption.fontSize,
-    marginTop: 2,
+  statTileValue: {
+    fontSize: 17,
+    fontWeight: '700',
   },
   emptyWrap: {
     paddingVertical: 48,
@@ -835,6 +991,9 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.rowGapLg,
   },
+  subSection: {
+    marginTop: spacing.rowGapLg,
+  },
   sectionTitle: {
     fontSize: 11,
     fontWeight: '700',
@@ -842,15 +1001,22 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: spacing.rowGapSm,
   },
+  subSectionTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: spacing.rowGapSm,
+  },
+  highlightCardContent: {
+    padding: 0,
+  },
   highlightRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: radius.input,
-    borderWidth: 1,
-    marginBottom: 8,
+    paddingHorizontal: spacing.cardPaddingSm,
   },
   highlightInfo: {
     flexShrink: 1,
@@ -872,40 +1038,97 @@ const styles = StyleSheet.create({
   highlightBadgeText: {
     fontSize: type.caption.fontSize,
     fontWeight: '700',
-    color: '#ffffff',
   },
-  selectorScroll: {
-    marginBottom: spacing.rowGapLg,
+  // ExerciseDropdown — button styled after LogTab's SplitPicker.
+  dropdownButtonShadow: {
+    borderRadius: radius.input,
+    marginBottom: spacing.rowGapMd,
   },
-  selectorRow: {
-    gap: 8,
-    paddingRight: 8,
-  },
-  selectorPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: radius.chip,
+  dropdownButtonClip: {
+    borderRadius: radius.input,
     borderWidth: 1,
-    maxWidth: 180,
+    overflow: 'hidden',
   },
-  selectorPillText: {
-    fontSize: type.metaSemibold.fontSize,
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.cardPaddingSm,
+    paddingVertical: 13,
+  },
+  dropdownButtonText: {
+    flex: 1,
+    fontSize: type.bodyMedium.fontSize,
     fontWeight: '600',
+    marginRight: 8,
+  },
+  dropdownScrim: {
+    flex: 1,
+    backgroundColor: 'rgba(20,15,30,0.5)',
+    justifyContent: 'flex-end',
+  },
+  dropdownSheetWrap: {
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    overflow: 'hidden',
+    maxHeight: '70%',
+  },
+  dropdownSheet: {
+    paddingHorizontal: spacing.screenSide,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  dropdownHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 14,
+  },
+  dropdownTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: spacing.rowGapMd,
+  },
+  dropdownList: {
+    maxHeight: 360,
+  },
+  dropdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    borderRadius: radius.input,
+    marginBottom: 4,
+  },
+  dropdownRowText: {
+    flex: 1,
+    fontSize: type.bodyMedium.fontSize,
+    fontWeight: '500',
+    marginRight: 8,
   },
   chartSection: {
     marginBottom: spacing.rowGapLg,
   },
   chartTitleRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.rowGapSm,
+    marginBottom: spacing.rowGapMd,
   },
   chartTitle: {
+    flex: 1,
     fontSize: 19,
     fontWeight: '700',
     fontStyle: 'italic',
     letterSpacing: -0.3,
+    marginRight: 8,
+  },
+  oneRMPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
   },
   oneRMText: {
     fontSize: type.caption.fontSize,
@@ -917,10 +1140,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.rowGapMd,
   },
   rangePill: {
-    paddingHorizontal: 12,
+    flex: 1,
     paddingVertical: 7,
     borderRadius: radius.chip,
     borderWidth: 1,
+    alignItems: 'center',
   },
   rangePillText: {
     fontSize: type.caption.fontSize,
@@ -929,9 +1153,7 @@ const styles = StyleSheet.create({
   chartCard: {
     marginBottom: spacing.rowGapMd,
   },
-  chartCardContent: {
-    alignItems: 'center',
-  },
+  chartCardContent: {},
   chartEmpty: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -990,27 +1212,63 @@ const styles = StyleSheet.create({
   logCardContent: {
     padding: 0,
   },
+  // Session-log table (per-exercise), styled after HistoryModal's table.
+  table: {
+    borderRadius: radius.input,
+    overflow: 'hidden',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    paddingHorizontal: spacing.cardPaddingSm,
+  },
+  tableHeaderText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  tableCellText: {
+    fontSize: 12,
+  },
+  tableCellBest: {
+    fontWeight: '700',
+  },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.cardPaddingSm,
   },
-  logText: {
+  logColDate: {
+    flex: 1.1,
+    fontSize: 12,
+  },
+  logColReps: {
     flex: 1,
-    fontSize: type.meta.fontSize,
+    fontSize: 12,
+  },
+  logColWeight: {
+    flex: 1,
+  },
+  logWeightCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  logColOneRM: {
+    flex: 0.7,
+    fontSize: 12,
+    textAlign: 'right',
   },
   bumpBadge: {
-    marginLeft: 8,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bumpBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
   },
   emptyLogText: {
@@ -1021,10 +1279,26 @@ const styles = StyleSheet.create({
   sessionCard: {
     marginBottom: spacing.rowGapMd,
   },
+  sessionHeaderOuter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   sessionHeader: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  sessionDeleteBtn: {
+    minWidth: 24,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  sessionDeleteConfirmText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   sessionHeaderLeft: {
     flexShrink: 1,
@@ -1045,19 +1319,19 @@ const styles = StyleSheet.create({
   sessionDate: {
     fontSize: type.meta.fontSize,
   },
-  sessionChevron: {
-    fontSize: 13,
-  },
   sessionBody: {
     marginTop: spacing.rowGapSm,
     paddingTop: spacing.rowGapSm,
     borderTopWidth: 1,
-    gap: 8,
+    gap: 6,
   },
   exerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: radius.input,
   },
   exerciseRowName: {
     flex: 1,

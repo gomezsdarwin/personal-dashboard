@@ -53,12 +53,36 @@ function isScheduledToday(item: PeptideInventoryRow, abbr: string): boolean {
   return false;
 }
 
-/** Total amount on hand, in mg — `vials * vial_mg` generalizes across both
- * kinds since `vial_mg` doubles as "amount per unit (mg)" for supplements. */
+/** Total amount on hand, in mg. `amount_left_mg` is the source of truth (see
+ * feature 1 in the header doc); `vials` is kept in sync with it on save
+ * (exact fraction — see `deriveVials`) so `vials * vial_mg` always equals the
+ * `amount_left_mg` as of the last save, and only drifts below it afterward as
+ * doses are taken. This makes it a meaningful "capacity as of last restock"
+ * reference for the progress bar / doses-left projection, without a separate
+ * persisted capacity field. */
 function amountTotalMg(item: Pick<PeptideInventoryRow, 'vials' | 'vial_mg'>): number {
   const vials = item.vials || 0;
   const vialMg = item.vial_mg || 0;
   return vials * vialMg;
+}
+
+/** Derives the `vials` column from the editable `amount_left_mg` source of
+ * truth, so the column stays meaningful for anything else that reads it.
+ * Exact fraction (not rounded/ceiled) — e.g. 125 mg left / 5 mg vials = 25
+ * exactly, but 130 mg / 5 mg vials = 26, and 132 mg / 5 mg = 26.4 — chosen
+ * over ceil so `vials * vial_mg` round-trips back to `amount_left_mg` exactly
+ * and the progress bar starts at 100% right after a save. Returns 0 when
+ * `vial_mg` is 0 (can't divide) rather than Infinity/NaN. */
+function deriveVials(amountLeftMg: number, vialMg: number): number {
+  if (!(vialMg > 0)) return 0;
+  return amountLeftMg / vialMg;
+}
+
+/** Formats a derived vial count for display, e.g. "2.5 vials". One decimal;
+ * trims a trailing ".0" so whole counts still read as "3 vials" not "3.0". */
+function formatVials(vials: number): string {
+  const rounded = Math.round(vials * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 /** Formats an mg amount for display, trimming float noise (e.g. 199.99999999997 -> "200"). */
@@ -210,13 +234,28 @@ export default function PeptidesScreen() {
   // loaded, make sure every non-paused compound scheduled for today has a
   // fresh (untaken) dose row for today's date, without touching history or
   // duplicating rows that already exist (e.g. inserted by handleScheduleSave
-  // or AddInventoryForm's onAdd). It also sweeps away stale untaken rows for
-  // today that no longer belong on the schedule — e.g. a dose row whose
-  // compound was deleted before per-item cleanup existed (orphaned), or a
-  // row left over from an earlier schedule edit whose item is now on_break
-  // or no longer scheduled for today's weekday (mismatched). Only untaken
-  // rows dated today are ever candidates; taken rows (dose history) and rows
-  // from other dates are never touched. Runs once per calendar date.
+  // or AddInventoryForm's onAdd). It also sweeps away stale/junk rows in
+  // three passes:
+  //   1. invalid — untaken rows dated today whose compound no longer belongs
+  //      on the schedule: orphaned (deleted before per-item cleanup existed),
+  //      on_break, or mismatched (schedule moved off today's weekday).
+  //   2. duplicates — when more than one untaken row exists for the same
+  //      compound today (e.g. a React double-invoke of this effect), only
+  //      the first is kept. `seenNames` is pre-seeded with the names of
+  //      today's *taken* rows, so a leftover untaken duplicate for a
+  //      compound that's already been taken today is swept too — otherwise
+  //      the schedule would show that compound twice (once dimmed/taken,
+  //      once still active), letting a second dose slip through and
+  //      double-subtract from inventory.
+  //   3. stalePast — untaken rows dated before today. Without this pass,
+  //      untaken rows older than today were never touched by any prior
+  //      pass and accumulated as junk forever.
+  // Taken rows (dose history) are never removed, at any date — only untaken
+  // rows are ever candidates for removal, and the three passes above are
+  // mutually exclusive by construction (each dose id can only match one:
+  // invalid/duplicates are today-only and duplicates explicitly excludes
+  // ids already in invalidIds; stalePast is strictly before today) so no
+  // row is ever scheduled for removal twice. Runs once per calendar date.
   useEffect(() => {
     if (inventory.loading || doses.loading) return;
     const today = todayIso();
@@ -241,34 +280,92 @@ export default function PeptidesScreen() {
       });
     });
 
-    const stale = doses.rows.filter((dose) => {
+    const invalid = doses.rows.filter((dose) => {
       if (dose.scheduled_for !== today || dose.taken) return false;
       const invItem = inventory.rows.find((item) => item.name === dose.name);
       if (!invItem) return true; // orphaned — no matching inventory item
       if (invItem.on_break) return true;
       return !isScheduledToday(invItem, abbr); // mismatched — schedule moved off today
     });
+    const invalidIds = new Set(invalid.map((dose) => dose.id));
 
-    stale.forEach((dose) => {
+    // Pre-seed with today's already-taken compound names so a leftover
+    // untaken duplicate for an already-taken compound is swept as well.
+    const seenNames = new Set<string>(
+      doses.rows.filter((dose) => dose.scheduled_for === today && dose.taken).map((dose) => dose.name)
+    );
+    const duplicates = doses.rows.filter((dose) => {
+      if (dose.scheduled_for !== today || dose.taken || invalidIds.has(dose.id)) return false;
+      if (seenNames.has(dose.name)) return true;
+      seenNames.add(dose.name);
+      return false;
+    });
+    const duplicateIds = new Set(duplicates.map((dose) => dose.id));
+
+    // Untaken rows scheduled before today — junk that no other pass above
+    // ever catches (dose history / taken rows are never touched, any date).
+    const stalePast = doses.rows.filter((dose) => {
+      if (dose.taken) return false;
+      if (dose.scheduled_for >= today) return false;
+      return !invalidIds.has(dose.id) && !duplicateIds.has(dose.id);
+    });
+
+    [...invalid, ...duplicates, ...stalePast].forEach((dose) => {
       doses.remove(dose.id);
     });
   }, [inventory.loading, doses.loading, inventory.rows, doses.rows]);
 
-  const handleDoseToggle = async (dose: PeptideDoseRow) => {
-    const nextTaken = !dose.taken;
-    await doses.update(dose.id, { taken: nextTaken });
+  // Today's-schedule checkboxes are staged locally (not persisted per-tap) —
+  // the user checks off whatever they took, then presses Submit to apply all
+  // of them at once (see handleSubmitDoses). Already-taken doses render as
+  // locked/dimmed (see DoseRow) and are never part of this set.
+  const [checkedDoseIds, setCheckedDoseIds] = useState<Set<string>>(new Set());
+  const [submittingDoses, setSubmittingDoses] = useState(false);
 
-    const invItem = inventory.rows.find((item) => item.name === dose.name);
-    if (invItem) {
-      const doseMg = invItem.dose_mg || 0;
-      const total = amountTotalMg(invItem);
-      const currentLeft = invItem.amount_left_mg ?? total;
-      const delta = nextTaken ? -doseMg : doseMg;
-      const nextLeft = Math.max(0, Math.min(total, currentLeft + delta));
-      await inventory.update(invItem.id, {
-        amount_left_mg: nextLeft,
-        ...(nextTaken ? { last_taken_at: new Date().toISOString() } : {}),
-      });
+  const handleDoseCheckToggle = (dose: PeptideDoseRow) => {
+    if (dose.taken) return;
+    setCheckedDoseIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(dose.id)) next.delete(dose.id);
+      else next.add(dose.id);
+      return next;
+    });
+  };
+
+  // Applies every checked-but-not-yet-taken dose in one action: subtracts
+  // dose_mg from that compound's amount_left_mg, stamps last_taken_at, and
+  // marks the peptide_doses row taken=true for today — then clears the
+  // checked set so the next round starts unchecked. Idempotent per dose: only
+  // rows that are still untaken at submit time are applied, so pressing
+  // Submit twice (or a stale checked id lingering across a race) can never
+  // double-subtract a dose that's already taken.
+  const handleSubmitDoses = async () => {
+    const today = todayIso();
+    const toApply = activeDoseRows.filter(
+      (dose) => checkedDoseIds.has(dose.id) && !dose.taken && dose.scheduled_for === today
+    );
+    if (toApply.length === 0) {
+      setCheckedDoseIds(new Set());
+      return;
+    }
+    setSubmittingDoses(true);
+    const now = new Date().toISOString();
+    try {
+      await Promise.all(
+        toApply.map(async (dose) => {
+          await doses.update(dose.id, { taken: true });
+          const invItem = inventory.rows.find((item) => item.name === dose.name);
+          if (invItem) {
+            const doseMg = invItem.dose_mg || 0;
+            const currentLeft = invItem.amount_left_mg ?? amountTotalMg(invItem);
+            const nextLeft = Math.max(0, currentLeft - doseMg);
+            await inventory.update(invItem.id, { amount_left_mg: nextLeft, last_taken_at: now });
+          }
+        })
+      );
+    } finally {
+      setCheckedDoseIds(new Set());
+      setSubmittingDoses(false);
     }
   };
 
@@ -287,39 +384,60 @@ export default function PeptidesScreen() {
     amount: string,
     timeLabel: string,
     note: string,
-    vialsText: string,
+    amountLeftText: string,
     doseMgText: string,
-    frequencyDays: string[]
+    frequencyDays: string[],
+    name: string,
+    kind: PeptideKind,
+    vialMgText: string,
+    bacMlText: string
   ) => {
     const trimmedAmount = amount.trim();
     const trimmedTime = timeLabel.trim();
+    const trimmedName = name.trim();
 
     // Inventory-editing fields: fall back to the existing value on invalid/blank
     // input rather than zeroing it out, since this form doubles as "edit schedule".
-    const vialsNum = Number.parseInt(vialsText, 10);
-    const vialsClean = Number.isFinite(vialsNum) && vialsNum >= 0 ? vialsNum : item.vials;
+    // `amount_left_mg` is the source of truth for stock (feature 1) — the user
+    // edits it directly; `vials` is re-derived from it below rather than the
+    // other way around, so there's no clamp against a stale vial-based max.
+    const amountLeftNum = Number.parseFloat(amountLeftText);
+    const nextLeft =
+      Number.isFinite(amountLeftNum) && amountLeftNum >= 0
+        ? amountLeftNum
+        : item.amount_left_mg ?? amountTotalMg(item);
     const doseMgNum = Number.parseFloat(doseMgText);
     const doseMgClean = Number.isFinite(doseMgNum) && doseMgNum >= 0 ? doseMgNum : item.dose_mg;
-    const total = vialsClean * item.vial_mg;
-    // Adding vials should grow the remaining amount, not just re-clamp it to
-    // the new total — otherwise topping up inventory in the edit form has no
-    // effect on `amount_left_mg` when it was already sitting below the old total.
-    const currentLeft = item.amount_left_mg ?? total;
-    const vialsDeltaMg = (vialsClean - item.vials) * item.vial_mg;
-    const grownLeft = vialsDeltaMg > 0 ? currentLeft + vialsDeltaMg : currentLeft;
-    const nextLeft = Math.max(0, Math.min(total, grownLeft));
+    const vialMgNum = Number.parseFloat(vialMgText);
+    const vialMgClean = Number.isFinite(vialMgNum) && vialMgNum >= 0 ? vialMgNum : item.vial_mg;
+    const bacMlNum = Number.parseFloat(bacMlText);
+    const bacMlClean = Number.isFinite(bacMlNum) && bacMlNum >= 0 ? bacMlNum : item.bac_ml;
+    const vialsClean = deriveVials(nextLeft, vialMgClean);
 
     await inventory.update(item.id, {
+      name: trimmedName || item.name,
+      kind,
       schedule_amount: trimmedAmount,
       schedule_time_label: trimmedTime,
       note: note.trim(),
       vials: vialsClean,
+      vial_mg: vialMgClean,
+      ...(kind === 'peptide' ? { bac_ml: bacMlClean } : {}),
       dose_mg: doseMgClean,
-      ...(item.kind === 'peptide' ? { dose_mcg: doseMgClean * 1000 } : {}),
+      ...(kind === 'peptide' ? { dose_mcg: doseMgClean * 1000 } : {}),
       frequency_days: frequencyDays.join(','),
       ...(frequencyDays.length > 0 ? { frequency: 'weekdays' as PeptideFrequency } : {}),
       amount_left_mg: nextLeft,
     });
+
+    const finalName = trimmedName || item.name;
+    // Dose rows reference their compound by name (not id) — if the name
+    // changed, re-point every dose row (history included) so nothing goes
+    // orphaned and gets swept up by the stale-row cleanup above.
+    if (finalName !== item.name) {
+      const renameTargets = doses.rows.filter((dose) => dose.name === item.name);
+      await Promise.all(renameTargets.map((dose) => doses.update(dose.id, { name: finalName })));
+    }
 
     const today = todayIso();
     const existing = doses.rows.find((dose) => dose.name === item.name && dose.scheduled_for === today);
@@ -331,15 +449,15 @@ export default function PeptidesScreen() {
     }
 
     if (existing) {
-      await doses.update(existing.id, { amount: trimmedAmount, time_label: trimmedTime, kind: item.kind });
+      await doses.update(existing.id, { name: finalName, amount: trimmedAmount, time_label: trimmedTime, kind });
     } else {
       await doses.insert({
-        name: item.name,
+        name: finalName,
         amount: trimmedAmount,
         time_label: trimmedTime,
         taken: false,
         scheduled_for: today,
-        kind: item.kind,
+        kind,
       });
     }
     setEditingId(null);
@@ -356,7 +474,13 @@ export default function PeptidesScreen() {
               <Text style={[styles.groupLabel, { color: palette.text.tertiary }]}>{KIND_LABEL[group.kind]}</Text>
               <View style={styles.doseGroupList}>
                 {group.items.map((dose) => (
-                  <DoseRow key={dose.id} dose={dose} onToggle={() => handleDoseToggle(dose)} />
+                  <DoseRow
+                    key={dose.id}
+                    dose={dose}
+                    checked={checkedDoseIds.has(dose.id)}
+                    disabled={submittingDoses}
+                    onToggle={() => handleDoseCheckToggle(dose)}
+                  />
                 ))}
               </View>
             </View>
@@ -367,6 +491,26 @@ export default function PeptidesScreen() {
             </Text>
           ) : null}
         </View>
+        {activeDoseRows.some((dose) => !dose.taken) ? (
+          <Pressable
+            onPress={handleSubmitDoses}
+            disabled={checkedDoseIds.size === 0 || submittingDoses}
+            style={[styles.submitBtnWrap, (checkedDoseIds.size === 0 || submittingDoses) && styles.submitBtnDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Submit checked doses"
+          >
+            <LinearGradient colors={accent.default} start={accent.diagonal().start} end={accent.diagonal().end} style={styles.submitBtn}>
+              <MaterialCommunityIcons name="check-bold" size={16} color="#ffffff" />
+              <Text style={styles.submitBtnText}>
+                {submittingDoses
+                  ? 'Submitting…'
+                  : checkedDoseIds.size > 0
+                  ? `Submit ${checkedDoseIds.size} dose${checkedDoseIds.size === 1 ? '' : 's'}`
+                  : 'Submit'}
+              </Text>
+            </LinearGradient>
+          </Pressable>
+        ) : null}
       </GlassCard>
 
       <View style={styles.sectionHeaderRow}>
@@ -426,8 +570,8 @@ export default function PeptidesScreen() {
                   item={item}
                   isEditing={editingId === item.id}
                   onToggleEdit={() => setEditingId((cur) => (cur === item.id ? null : item.id))}
-                  onSaveSchedule={(amount, timeLabel, note, vials, doseMg, frequencyDays) =>
-                    handleScheduleSave(item, amount, timeLabel, note, vials, doseMg, frequencyDays)
+                  onSaveSchedule={(amount, timeLabel, note, amountLeft, doseMg, frequencyDays, name, kind, vialMg, bacMl) =>
+                    handleScheduleSave(item, amount, timeLabel, note, amountLeft, doseMg, frequencyDays, name, kind, vialMg, bacMl)
                   }
                   onRemove={() => handleRemoveInventory(item)}
                   onToggleBreak={() => handleToggleBreak(item)}
@@ -446,23 +590,53 @@ export default function PeptidesScreen() {
   );
 }
 
-function DoseRow({ dose, onToggle }: { dose: PeptideDoseRow; onToggle: () => void }) {
+/**
+ * One row in Today's schedule. Three visual states:
+ * - taken (already submitted today): locked/dimmed checkmark badge, no
+ *   interaction — see feature 4's "after submit" decision in the header doc.
+ * - checked (staged for the next Submit, not yet applied): filled checkbox,
+ *   same accent styling taken used to have, but still tappable to uncheck.
+ * - unchecked: empty box, tappable to check.
+ */
+function DoseRow({
+  dose,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  dose: PeptideDoseRow;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
   const { palette, mode } = useTheme();
   // Unchecked: border-white/30 + bg-white/5 (dark) — checked: border-primary +
   // bg-primary/30 tinted fill, matching sampleindex.html's task checkboxes exactly.
   const uncheckedBorder = mode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)';
   const uncheckedBg = mode === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const filled = dose.taken || checked;
   return (
-    <View style={styles.doseRow}>
-      <Pressable onPress={onToggle} hitSlop={8} style={styles.checkboxWrap}>
-        {dose.taken ? (
+    <View style={[styles.doseRow, dose.taken && styles.doseRowTaken]}>
+      <Pressable
+        onPress={dose.taken || disabled ? undefined : onToggle}
+        hitSlop={8}
+        style={styles.checkboxWrap}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: filled, disabled: dose.taken || disabled }}
+        accessibilityLabel={dose.taken ? `${dose.name} already taken today` : `Mark ${dose.name} as taken`}
+      >
+        {filled ? (
           <View
             style={[
               styles.checkbox,
-              { borderColor: palette.accentText, backgroundColor: withAlpha(palette.accentText, 0.3) },
+              {
+                borderColor: palette.accentText,
+                backgroundColor: withAlpha(palette.accentText, dose.taken ? 0.16 : 0.3),
+              },
+              dose.taken && styles.checkboxDimmed,
             ]}
           >
-            <MaterialCommunityIcons name="check" size={16} color="#ffffff" />
+            <MaterialCommunityIcons name="check" size={16} color={dose.taken ? palette.text.quaternary : '#ffffff'} />
           </View>
         ) : (
           <View style={[styles.checkbox, { backgroundColor: uncheckedBg, borderColor: uncheckedBorder }]} />
@@ -480,7 +654,11 @@ function DoseRow({ dose, onToggle }: { dose: PeptideDoseRow; onToggle: () => voi
         </Text>
         <Text style={[styles.doseAmount, { color: palette.text.tertiary }]}>{dose.amount}</Text>
       </View>
-      <Text style={[styles.doseTime, { color: palette.text.quaternary }]}>{dose.time_label}</Text>
+      {dose.taken ? (
+        <Text style={[styles.doseTakenBadge, { color: palette.text.quaternary }]}>Taken</Text>
+      ) : (
+        <Text style={[styles.doseTime, { color: palette.text.quaternary }]}>{dose.time_label}</Text>
+      )}
     </View>
   );
 }
@@ -500,33 +678,57 @@ function InventoryCard({
     amount: string,
     timeLabel: string,
     note: string,
-    vials: string,
+    amountLeft: string,
     doseMg: string,
-    frequencyDays: string[]
+    frequencyDays: string[],
+    name: string,
+    kind: PeptideKind,
+    vialMg: string,
+    bacMl: string
   ) => void;
   onRemove: () => void;
   onToggleBreak: () => void;
 }) {
   const { palette, glass } = useTheme();
+  const [name, setName] = useState(item.name);
+  const [kind, setKind] = useState<PeptideKind>(item.kind);
   const [amount, setAmount] = useState(item.schedule_amount);
   const [timeLabel, setTimeLabel] = useState(item.schedule_time_label);
   const [note, setNote] = useState(item.note);
-  const [vialsText, setVialsText] = useState(String(item.vials ?? ''));
+  const [amountLeftText, setAmountLeftText] = useState(String(item.amount_left_mg ?? amountTotalMg(item)));
   const [doseMgText, setDoseMgText] = useState(item.dose_mg ? String(item.dose_mg) : '');
+  const [vialMgText, setVialMgText] = useState(item.vial_mg ? String(item.vial_mg) : '');
+  const [bacMlText, setBacMlText] = useState(item.bac_ml ? String(item.bac_ml) : '');
   const [editFrequencyDays, setEditFrequencyDays] = useState<string[]>(
     item.frequency_days ? item.frequency_days.split(',').filter(Boolean) : []
   );
 
   useEffect(() => {
     if (isEditing) {
+      setName(item.name);
+      setKind(item.kind);
       setAmount(item.schedule_amount);
       setTimeLabel(item.schedule_time_label);
       setNote(item.note);
-      setVialsText(String(item.vials ?? ''));
+      setAmountLeftText(String(item.amount_left_mg ?? amountTotalMg(item)));
       setDoseMgText(item.dose_mg ? String(item.dose_mg) : '');
+      setVialMgText(item.vial_mg ? String(item.vial_mg) : '');
+      setBacMlText(item.bac_ml ? String(item.bac_ml) : '');
       setEditFrequencyDays(item.frequency_days ? item.frequency_days.split(',').filter(Boolean) : []);
     }
-  }, [isEditing, item.schedule_amount, item.schedule_time_label, item.note, item.vials, item.dose_mg, item.frequency_days]);
+  }, [
+    isEditing,
+    item.name,
+    item.kind,
+    item.schedule_amount,
+    item.schedule_time_label,
+    item.note,
+    item.amount_left_mg,
+    item.dose_mg,
+    item.vial_mg,
+    item.bac_ml,
+    item.frequency_days,
+  ]);
 
   const toggleEditFrequencyDay = (day: string) => {
     setEditFrequencyDays((cur) => (cur.includes(day) ? cur.filter((d) => d !== day) : [...cur, day]));
@@ -544,14 +746,21 @@ function InventoryCard({
   const onHandLabel = item.kind === 'supplement' ? 'on hand' : 'vials on hand';
   const inputStyle = { backgroundColor: glass.fill, borderColor: glass.borderElevated, color: palette.text.primary };
   const reconText = reconSummary(item) ?? item.recon;
+  // Vials are derived, not stored/edited directly (feature 1) — recompute
+  // from the live item so it always reflects amount_left_mg, not just the
+  // value as of the last save. Uses the same `left` fallback as the caption
+  // above (amount-derived total for legacy rows) so the two stay consistent.
+  const derivedVials = deriveVials(left, item.vial_mg ?? 0);
 
   return (
     <GlassCard radius={radius.inventoryCard} style={styles.inventoryCardGap} contentStyle={styles.inventoryContent}>
       <View style={styles.inventoryHeaderRow}>
         <Text style={[styles.inventoryName, { color: palette.text.primary }]}>{item.name}</Text>
-        <Text style={[styles.inventoryVials, { color: palette.text.tertiary }]}>
-          {item.vials} {onHandLabel}
-        </Text>
+        {item.vial_mg > 0 ? (
+          <Text style={[styles.inventoryVials, { color: palette.text.tertiary }]}>
+            {formatVials(derivedVials)} {onHandLabel}
+          </Text>
+        ) : null}
       </View>
       {reconText ? <Text style={[styles.inventoryRecon, { color: palette.text.quaternary }]}>{reconText}</Text> : null}
       {item.on_break ? (
@@ -631,14 +840,41 @@ function InventoryCard({
       </View>
       {isEditing ? (
         <View style={styles.scheduleFormWrap}>
+          <TextInput
+            style={[styles.input, styles.inputName, inputStyle]}
+            placeholder="Name"
+            placeholderTextColor={palette.text.faint}
+            value={name}
+            onChangeText={setName}
+          />
+          <View style={styles.kindToggleRow}>
+            {KIND_ORDER.map((option) => {
+              const active = kind === option;
+              return (
+                <Pressable
+                  key={option}
+                  onPress={() => setKind(option)}
+                  style={[
+                    styles.kindToggleBtn,
+                    { borderColor: glass.borderElevated },
+                    active && { backgroundColor: withAlpha(palette.accentText, 0.22), borderColor: palette.accentText },
+                  ]}
+                >
+                  <Text style={[styles.kindToggleText, { color: active ? palette.accentText : palette.text.tertiary }]}>
+                    {KIND_LABEL[option]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <View style={styles.scheduleForm}>
             <TextInput
               style={[styles.input, styles.inputVials, inputStyle]}
-              placeholder={item.kind === 'supplement' ? 'On hand' : 'Vials'}
+              placeholder="Amount left (mg)"
               placeholderTextColor={palette.text.faint}
-              value={vialsText}
-              onChangeText={setVialsText}
-              keyboardType="number-pad"
+              value={amountLeftText}
+              onChangeText={setAmountLeftText}
+              keyboardType="decimal-pad"
             />
             <TextInput
               style={[styles.input, styles.inputVials, inputStyle]}
@@ -649,6 +885,30 @@ function InventoryCard({
               keyboardType="decimal-pad"
             />
           </View>
+          <View style={styles.scheduleForm}>
+            <TextInput
+              style={[styles.input, styles.inputVials, inputStyle]}
+              placeholder={kind === 'supplement' ? 'Amount per unit (mg)' : 'Vial size (mg)'}
+              placeholderTextColor={palette.text.faint}
+              value={vialMgText}
+              onChangeText={setVialMgText}
+              keyboardType="decimal-pad"
+            />
+            {kind === 'peptide' ? (
+              <TextInput
+                style={[styles.input, styles.inputVials, inputStyle]}
+                placeholder="BAC water (mL)"
+                placeholderTextColor={palette.text.faint}
+                value={bacMlText}
+                onChangeText={setBacMlText}
+                keyboardType="decimal-pad"
+              />
+            ) : null}
+          </View>
+          <Text style={[styles.frequencyTag, { color: palette.text.quaternary }]}>
+            {formatVials(deriveVials(Number.parseFloat(amountLeftText) || 0, Number.parseFloat(vialMgText) || 0))}{' '}
+            {kind === 'supplement' ? 'on hand' : 'vials'} (derived)
+          </Text>
           <View style={styles.scheduleForm}>
             <TextInput
               style={[styles.input, styles.inputAmount, inputStyle]}
@@ -695,7 +955,9 @@ function InventoryCard({
             multiline
           />
           <Pressable
-            onPress={() => onSaveSchedule(amount, timeLabel, note, vialsText, doseMgText, editFrequencyDays)}
+            onPress={() =>
+              onSaveSchedule(amount, timeLabel, note, amountLeftText, doseMgText, editFrequencyDays, name, kind, vialMgText, bacMlText)
+            }
             style={[styles.saveBtn, styles.saveBtnFullWidth, { backgroundColor: glass.borderElevated }]}
           >
             <Text style={[styles.saveBtnText, { color: palette.text.primaryAlt }]}>Save</Text>
@@ -964,6 +1226,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.rowGapMd,
   },
+  doseRowTaken: {
+    opacity: 0.6,
+  },
   checkboxWrap: {
     flexShrink: 0,
   },
@@ -976,6 +1241,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
+  },
+  checkboxDimmed: {
+    opacity: 0.7,
   },
   doseInfo: {
     flex: 1,
@@ -991,6 +1259,12 @@ const styles = StyleSheet.create({
   doseTime: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  doseTakenBadge: {
+    fontSize: type.caption.fontSize,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   removeBtn: {
     paddingHorizontal: 4,
@@ -1237,6 +1511,9 @@ const styles = StyleSheet.create({
   },
   submitBtnWrap: {
     marginTop: spacing.rowGapMd,
+  },
+  submitBtnDisabled: {
+    opacity: 0.45,
   },
   submitBtn: {
     flexDirection: 'row',

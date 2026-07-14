@@ -109,9 +109,9 @@ function buildExerciseList(
   config: GymSplitConfigEntry[] | null
 ): LocalExercise[] {
   const entries: GymSplitConfigEntry[] =
-    config && config.length > 0
-      ? config
-      : getDefaultSlots(splitId).map((s) => ({ slot: s.slot, id: s.slot }) as GymSplitConfigEntry);
+    config == null
+      ? getDefaultSlots(splitId).map((s) => ({ slot: s.slot, id: s.slot }) as GymSplitConfigEntry)
+      : config;
 
   const built: LocalExercise[] = [];
   for (const entry of entries) {
@@ -488,6 +488,16 @@ export function LogTab() {
     }
   }
 
+  /** Saves the session and flips to the "saved" summary state (spec §6.9).
+   * Unlike an earlier version of this function, it does NOT clear `exercises`
+   * afterward — the form state stays exactly as it was persisted. Rendering
+   * gates on `saved` instead: the render below swaps the editable exercise
+   * list + Save button for a summary card while `saved` is true. Because the
+   * real (non-blank) data stays in state, any later auto-persist or direct
+   * edit (commitDirectLog/updateHitReps/etc., which call persistDraft with
+   * the current in-memory exercises) can never overwrite today's saved row
+   * with a near-empty list — there is no code path left that blanks
+   * `exercises` while `currentSessionId` still points at a saved session. */
   async function saveSession() {
     if (!selectedSplit) return;
     await persistDraft();
@@ -553,71 +563,92 @@ export function LogTab() {
         />
       ) : (
         <>
-          {exercises.map((ex, idx) =>
-            collapsed.has(idx) ? (
-              <DoneExerciseCard key={`${ex.slot}-${idx}`} exercise={ex} onExpand={() => {
-                setCollapsed((prev) => {
-                  const next = new Set(prev);
-                  next.delete(idx);
-                  return next;
-                });
-              }} />
-            ) : (
-              <ExerciseCard
-                key={`${ex.slot}-${idx}`}
-                exIdx={idx}
-                exercise={ex}
-                lastWeight={lastData[ex.id]?.[0]?.weight}
-                tuning={tuneIdx === idx}
-                tuneValue={tuneValue}
-                onTuneStart={() => {
-                  setTuneIdx(idx);
-                  setTuneValue(String(ex.sets[0].weight ?? ''));
-                }}
-                onTuneChange={setTuneValue}
-                onTuneCommit={() => {
-                  const num = Number(tuneValue);
-                  updateWeight(idx, Number.isFinite(num) && tuneValue.trim() !== '' ? num : tuneValue);
-                  setTuneIdx(null);
-                }}
-                onSwapOpen={() => setSwapOpenIdx(idx)}
-                onHistoryOpen={() => setHistoryModalEx(ex)}
-                editHitKey={editHitKey}
-                onEditHitStart={(setIdx) => {
-                  setEditHitKey(`${idx}-${setIdx}`);
-                  setEditHitValue(String(ex.sets[setIdx].reps ?? ''));
-                }}
-                editHitValue={editHitValue}
-                onEditHitChange={setEditHitValue}
-                onEditHitCommit={(setIdx) => {
-                  updateHitReps(idx, setIdx, editHitValue);
-                  setEditHitKey(null);
-                }}
-                onHit={(setIdx) => hitSet(idx, setIdx)}
-                onMissStart={(setIdx) => startMiss(idx, setIdx)}
-                onMissChange={(setIdx, value) => setMissReps(idx, setIdx, value)}
-                onMissCommit={(setIdx) => commitMissReps(idx, setIdx)}
-                onDirectLog={(setIdx, value) => directLog(idx, setIdx, value)}
-                onDirectLogCommit={(setIdx) => commitDirectLog(idx, setIdx)}
-                onReset={(setIdx) => resetSet(idx, setIdx)}
-              />
-            )
-          )}
-
-          {exercises.length > 0 && (
-            <Pressable
-              style={[
-                styles.saveBtn,
-                { backgroundColor: saved ? palette.successBg : palette.success, shadowColor: palette.success },
-                saved && styles.saveBtnSaved,
-              ]}
-              onPress={saveSession}
-              disabled={saved}
-            >
-              <Text style={[styles.saveBtnText, saved && { color: palette.success }]}>
-                {saved ? '✓ Saved' : 'Save Session'}
+          {saved ? (
+            <GlassCard style={styles.savedCard}>
+              <View style={styles.savedRow}>
+                <View style={[styles.savedBadge, { backgroundColor: palette.success }]}>
+                  <MaterialCommunityIcons name="check" size={18} color="#ffffff" />
+                </View>
+                <View style={styles.savedInfo}>
+                  <Text style={[styles.savedTitle, { color: palette.text.primaryAlt }]}>Session saved</Text>
+                  <Text style={[styles.savedSubtitle, { color: palette.text.tertiary }]}>
+                    {`${splitLabels[selectedSplit] ?? selectedSplit} · ${exercises.length} exercise${exercises.length === 1 ? '' : 's'} logged`}
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                style={[styles.editSessionBtn, { backgroundColor: palette.track }]}
+                onPress={() => setSaved(false)}
+              >
+                <Text style={[styles.editSessionBtnText, { color: palette.text.primaryAlt }]}>Edit session</Text>
+              </Pressable>
+            </GlassCard>
+          ) : exercises.length === 0 ? (
+            <GlassCard style={styles.emptyCard}>
+              <Text style={[styles.emptyText, { color: palette.text.tertiary }]}>
+                No exercises in this split — use Edit Split to add some.
               </Text>
-            </Pressable>
+            </GlassCard>
+          ) : (
+            <>
+              {exercises.map((ex, idx) =>
+                collapsed.has(idx) ? (
+                  <DoneExerciseCard key={`${ex.slot}-${idx}`} exercise={ex} onExpand={() => {
+                    setCollapsed((prev) => {
+                      const next = new Set(prev);
+                      next.delete(idx);
+                      return next;
+                    });
+                  }} />
+                ) : (
+                  <ExerciseCard
+                    key={`${ex.slot}-${idx}`}
+                    exIdx={idx}
+                    exercise={ex}
+                    lastWeight={lastData[ex.id]?.[0]?.weight}
+                    tuning={tuneIdx === idx}
+                    tuneValue={tuneValue}
+                    onTuneStart={() => {
+                      setTuneIdx(idx);
+                      setTuneValue(String(ex.sets[0].weight ?? ''));
+                    }}
+                    onTuneChange={setTuneValue}
+                    onTuneCommit={() => {
+                      const num = Number(tuneValue);
+                      updateWeight(idx, Number.isFinite(num) && tuneValue.trim() !== '' ? num : tuneValue);
+                      setTuneIdx(null);
+                    }}
+                    onSwapOpen={() => setSwapOpenIdx(idx)}
+                    onHistoryOpen={() => setHistoryModalEx(ex)}
+                    editHitKey={editHitKey}
+                    onEditHitStart={(setIdx) => {
+                      setEditHitKey(`${idx}-${setIdx}`);
+                      setEditHitValue(String(ex.sets[setIdx].reps ?? ''));
+                    }}
+                    editHitValue={editHitValue}
+                    onEditHitChange={setEditHitValue}
+                    onEditHitCommit={(setIdx) => {
+                      updateHitReps(idx, setIdx, editHitValue);
+                      setEditHitKey(null);
+                    }}
+                    onHit={(setIdx) => hitSet(idx, setIdx)}
+                    onMissStart={(setIdx) => startMiss(idx, setIdx)}
+                    onMissChange={(setIdx, value) => setMissReps(idx, setIdx, value)}
+                    onMissCommit={(setIdx) => commitMissReps(idx, setIdx)}
+                    onDirectLog={(setIdx, value) => directLog(idx, setIdx, value)}
+                    onDirectLogCommit={(setIdx) => commitDirectLog(idx, setIdx)}
+                    onReset={(setIdx) => resetSet(idx, setIdx)}
+                  />
+                )
+              )}
+
+              <Pressable
+                style={[styles.saveBtn, { backgroundColor: palette.success, shadowColor: palette.success }]}
+                onPress={saveSession}
+              >
+                <Text style={styles.saveBtnText}>Save Session</Text>
+              </Pressable>
+            </>
           )}
 
           {swapOpenIdx !== null && (
@@ -1280,15 +1311,51 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 6 },
   },
-  saveBtnSaved: {
-    shadowOpacity: 0,
-  },
   saveBtnText: {
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1,
     textTransform: 'uppercase',
     color: '#ffffff',
+  },
+  savedCard: {
+    alignItems: 'stretch',
+  },
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: spacing.rowGapMd,
+  },
+  savedBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  savedInfo: {
+    flex: 1,
+  },
+  savedTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    fontStyle: 'italic',
+    letterSpacing: -0.3,
+  },
+  savedSubtitle: {
+    fontSize: type.meta.fontSize,
+    marginTop: 2,
+  },
+  editSessionBtn: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: radius.chip,
+  },
+  editSessionBtnText: {
+    fontSize: type.metaSemibold.fontSize,
+    fontWeight: '700',
   },
   scrim: {
     flex: 1,

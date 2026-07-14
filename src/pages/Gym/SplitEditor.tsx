@@ -384,6 +384,43 @@ export function SplitEditor({ splitId, currentConfig, currentLabel, onSave, onCa
 }
 
 // ---------------------------------------------------------------------------
+// Remove button — inline two-tap confirm (never window.confirm/Alert.alert:
+// first tap arms a "Remove / Cancel" mini-prompt in place, second tap on
+// "Remove" fires `onConfirm`; tapping elsewhere via "Cancel" disarms it).
+// ---------------------------------------------------------------------------
+
+function RemoveButton({ onConfirm }: { onConfirm: () => void }) {
+  const { palette } = useTheme();
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming) {
+    return (
+      <View style={styles.removeConfirmRow}>
+        <Pressable
+          style={[styles.removeConfirmBtn, { backgroundColor: palette.danger }]}
+          onPress={() => {
+            setConfirming(false);
+            onConfirm();
+          }}
+          hitSlop={6}
+        >
+          <Text style={styles.removeConfirmBtnText}>Remove</Text>
+        </Pressable>
+        <Pressable style={styles.removeConfirmCancel} onPress={() => setConfirming(false)} hitSlop={6}>
+          <Text style={[styles.removeConfirmCancelText, { color: palette.text.tertiary }]}>Cancel</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <Pressable style={[styles.removeBtn, { backgroundColor: palette.dangerBg }]} onPress={() => setConfirming(true)} hitSlop={8}>
+      <Text style={[styles.removeBtnText, { color: palette.danger }]}>×</Text>
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Row view
 // ---------------------------------------------------------------------------
 
@@ -541,9 +578,19 @@ function EditorRowView({
 
       <View style={styles.rowActions}>
         {row.custom ? (
-          <Pressable style={[styles.removeBtn, { backgroundColor: palette.dangerBg }]} onPress={onRemove} hitSlop={8}>
-            <Text style={[styles.removeBtnText, { color: palette.danger }]}>×</Text>
-          </Pressable>
+          <RemoveButton onConfirm={onRemove} />
+        ) : row.enabled ? (
+          <View style={styles.libraryActionsRow}>
+            <RemoveButton onConfirm={onToggle} />
+            <View style={styles.reorderCol}>
+              <Pressable style={[styles.reorderBtn, isFirst && styles.reorderBtnDisabled]} onPress={onMoveUp} disabled={isFirst} hitSlop={4}>
+                <Text style={[styles.reorderBtnText, { color: palette.text.tertiary }]}>▲</Text>
+              </Pressable>
+              <Pressable style={[styles.reorderBtn, isLast && styles.reorderBtnDisabled]} onPress={onMoveDown} disabled={isLast} hitSlop={4}>
+                <Text style={[styles.reorderBtnText, { color: palette.text.tertiary }]}>▼</Text>
+              </Pressable>
+            </View>
+          </View>
         ) : (
           <View style={styles.reorderCol}>
             <Pressable style={[styles.reorderBtn, isFirst && styles.reorderBtnDisabled]} onPress={onMoveUp} disabled={isFirst} hitSlop={4}>
@@ -742,6 +789,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  libraryActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   reorderCol: {
     gap: 2,
   },
@@ -769,6 +821,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 18,
+  },
+  removeConfirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  removeConfirmBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  removeConfirmBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  removeConfirmCancel: {
+    paddingHorizontal: 2,
+  },
+  removeConfirmCancelText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   addCard: {
     marginBottom: spacing.rowGapMd,
